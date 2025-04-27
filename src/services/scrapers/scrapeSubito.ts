@@ -6,7 +6,6 @@ import { load } from 'cheerio';
 export async function scrapeSubito(query: string): Promise<ListingItem[]> {
   console.log(`🚀 [scrapeSubito] start for query="${query}"`);
 
-  // URL di ricerca Subito
   const url = `https://www.subito.it/annunci-italia/vendita/tutto/?q=${encodeURIComponent(query)}`;
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
 
@@ -14,24 +13,35 @@ export async function scrapeSubito(query: string): Promise<ListingItem[]> {
   const $ = load(resp.data);
   const items: ListingItem[] = [];
 
-  // Selettore aggiornato per la struttura corrente di Subito
+  // Selettore aggiornato per i card di Subito
   $('article.js-ad-card').each((_, el) => {
     const anchor = $(el).find('a[href*="/annunci-italia"]');
     const title = anchor.find('h2').text().trim();
     if (!title) return;
 
+    // Estrai prezzo
     const priceText = $(el)
-      .find('.Price__price')
+      .find('div[data-testid="ad-price"]')
       .text()
       .replace(/[^\d.,]/g, '')
       .replace(',', '.');
     const price = parseFloat(priceText) || 0;
 
+    // Link e URL
     const link = anchor.attr('href') || '';
-    const itemUrl = link.startsWith('http') ? link : `https://www.subito.it${link}`;
+    const itemUrl = link.startsWith('http')
+      ? link
+      : `https://www.subito.it${link}`;
 
-    const imageUrl = $(el).find('img').attr('src') || '';
-    const location = $(el).find('.AdCard__region').text().trim() || '';
+    // Immagine: ora si trova in data-src o src su <img>
+    const imgEl = $(el).find('img');
+    const imageUrl = imgEl.attr('data-src') || imgEl.attr('src') || '';
+
+    // Località
+    const location = $(el)
+      .find('div.ad-detail-location')
+      .text()
+      .trim() || '';
 
     items.push({
       id: itemUrl,
