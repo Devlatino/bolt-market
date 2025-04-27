@@ -14,7 +14,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const all = [...subito, ...ebay].sort((a, b) => a.price - b.price);
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-    res.status(200).json(all);
+  const page = parseInt(req.query.page as string) || 1;
+  const hasMore = false;
+  res.status(200).json({ items: all, hasMore });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Search failed' });

@@ -1,0 +1,30 @@
+--- a/src/services/searchService.ts
++++ b/src/services/searchService.ts
+@@ -1,7 +1,7 @@
+-export async function searchAcrossMarketplaces(query: string, page: number, filters: Filters): Promise<SearchResults> {
++export async function search(query: string, page: number, filters: Filters): Promise<SearchResults> {
+   // …
+-  const res = await fetch(\`/api/search?q=\${encodeURIComponent(query)}\`);
++  const params = new URLSearchParams({
++    q:        query,
++    page:     page.toString(),
++    priceMin: filters.priceMin.toString(),
++    priceMax: filters.priceMax.toString(),
++    marketplace: filters.marketplace
++  });
++  const res = await fetch(\`/api/search?\${params.toString()}\`);
+   const data = await res.json();
+   return data as SearchResults;
+ }
++export const search = searchAcrossMarketplaces;
+--- a/pages/api/search.ts
++++ b/pages/api/search.ts
+@@ export default async function handler(req, res) {
+-  // … dopo aver raccolto items:
+-  res.status(200).json(items);
++  // … dopo aver raccolto items:
++  const page = parseInt(req.query.page as string) || 1;
++  const hasMore = items.length > MAX_PER_PAGE * page;
++  // caching edge-friendly
++  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
++  res.status(200).json({ items, hasMore });
