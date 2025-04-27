@@ -1,9 +1,32 @@
-export interface Item { title: string; price: number; url: string; imageUrl: string; site: string; }
+import type { ListingItem } from '../types';
 
-export async function search(query: string, page: number, filters: Filters): Promise<SearchResults> {
-  // TODO: integra qui paginazione e filtri
-  const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-  if (!res.ok) throw new Error('Search API error');
-  return res.json();
+export interface Filters {
+  priceMin?: number;
+  priceMax?: number;
+  marketplace?: string;
 }
-export const search = search;
+
+export interface SearchResults {
+  items: ListingItem[];
+  hasMore: boolean;
+}
+
+export async function searchAcrossMarketplaces(
+  query: string,
+  page = 1,
+  filters: Filters = {}
+): Promise<SearchResults> {
+  const params = new URLSearchParams({
+    q:        query,
+    page:     page.toString(),
+    priceMin: filters.priceMin?.toString()  || '',
+    priceMax: filters.priceMax?.toString()  || '',
+    marketplace: filters.marketplace || ''
+  });
+  const res = await fetch(`/api/search?${params.toString()}`);
+  if (!res.ok) throw new Error('Search API error');
+  return res.json() as Promise<SearchResults>;
+}
+
+// il front-end importa `search`, quindi allineiamo l’export
+export const search = searchAcrossMarketplaces;
