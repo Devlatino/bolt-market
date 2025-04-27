@@ -23,16 +23,19 @@ export async function searchAcrossMarketplaces(
     priceMax: filters.priceMax?.toString()  || '',
     marketplace: filters.marketplace || ''
   });
+
+  console.log("🔍 fetch URL:", `/api/search?${params.toString()}`);
   const res = await fetch(`/api/search?${params.toString()}`);
-  console.log("🔍 fetch URL:", `\/api\/search?${params.toString()}`);
-  const data = await res.json();
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("❌ API Error:", res.status, errText);
+    throw new Error(`Search API failed with status ${res.status}`);
+  }
+
+  const data = await res.json() as SearchResults;
   console.log("📦 search response:", data);
-  return data as SearchResults;
-  if (!res.ok) throw new Error('Search API error');
-  return res.json() as Promise<SearchResults>;
+  return data;
 }
 
-// il front-end importa `search`, quindi allineiamo l’export
-
-
+// Il front‐end importa `search`, quindi allineiamo l’export
 export const search = searchAcrossMarketplaces;
