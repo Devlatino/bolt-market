@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Filter, BookmarkPlus, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { searchAcrossMarketplaces } from '../../services/searchService';
+import { search } from '../../services/searchService';
 import { saveSearch } from '../../services/userService';
 import SearchBar from '../common/SearchBar';
 import { ListingItem } from '../../types';
@@ -47,7 +47,7 @@ const SearchResults = () => {
         setIsLoadingMore(true);
       }
       
-      const searchResults = await searchAcrossMarketplaces(query, page, filters);
+      const searchResults = await search(query, page, filters);
       
       if (page === 1) {
         setResults(searchResults.items);
