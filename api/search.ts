@@ -26,27 +26,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Passa `page` anche a scrapeSubito per l'offset
     const [subitoRes, ebayRes] = await Promise.allSettled([
       scrapeSubito(q, page),
       scrapeEbay(q),
     ]);
 
-    const subitoItems: ListingItem[] = subitoRes.status === 'fulfilled'
-      ? subitoRes.value
-      : (console.error('❌ scrapeSubito failed:', subitoRes.reason), []);
+    const subitoItems: ListingItem[] =
+      subitoRes.status === 'fulfilled'
+        ? subitoRes.value
+        : (console.error('❌ scrapeSubito failed:', subitoRes.reason), []);
 
-    const ebayItems: ListingItem[] = ebayRes.status === 'fulfilled'
-      ? ebayRes.value
-      : (console.error('❌ scrapeEbay failed:', ebayRes.reason), []);
+    const ebayItems: ListingItem[] =
+      ebayRes.status === 'fulfilled'
+        ? ebayRes.value
+        : (console.error('❌ scrapeEbay failed:', ebayRes.reason), []);
 
-    // Mescola round-robin fra Subito ed eBay
+    // Mescola round-robin
     const all = interleaveArrays(subitoItems, ebayItems);
 
-    // Paginazione globale (ma ogni scraper già scorre la pagina sua)
-    const start = 0;
-    const items = all.slice(start, MAX_PER_PAGE);
-    const hasMore = subitoItems.length === ITEMS_PER_PAGE || ebayItems.length === ITEMS_PER_PAGE;
+    // Prendi i primi MAX_PER_PAGE
+    const items = all.slice(0, MAX_PER_PAGE);
+    // Se uno dei due ha restituito esattamente MAX_PER_PAGE, c'è un'altra pagina
+    const hasMore =
+      subitoItems.length === MAX_PER_PAGE || ebayItems.length === MAX_PER_PAGE;
 
     console.log(`📦 Returning ${items.length} items (hasMore=${hasMore})`);
 

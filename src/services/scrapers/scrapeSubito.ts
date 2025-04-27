@@ -11,12 +11,13 @@ export async function scrapeSubito(
 ): Promise<ListingItem[]> {
   console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
 
-  // Calcola l'offset: pagina 1 ⇒ offset 0, pagina 2 ⇒ offset 20, ecc.
   const offset = (page - 1) * ITEMS_PER_PAGE;
-  const baseUrl = `https://www.subito.it/annunci-italia/vendita/tutto/`;
-  const url = offset > 0
-    ? `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`
-    : `${baseUrl}?q=${encodeURIComponent(query)}`;
+  // NOTA: rimosso slash finale da `tutto`
+  const baseUrl = `https://www.subito.it/annunci-italia/vendita/tutto`;
+  const url =
+    offset > 0
+      ? `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`
+      : `${baseUrl}?q=${encodeURIComponent(query)}`;
 
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
 
@@ -29,7 +30,6 @@ export async function scrapeSubito(
     const title = anchor.find('h2').text().trim();
     if (!title) return;
 
-    // Estrai prezzo
     const priceText = $(el)
       .find('div[data-testid="ad-price"]')
       .text()
@@ -37,17 +37,14 @@ export async function scrapeSubito(
       .replace(',', '.');
     const price = parseFloat(priceText) || 0;
 
-    // Link e URL
     const link = anchor.attr('href') || '';
     const itemUrl = link.startsWith('http')
       ? link
       : `https://www.subito.it${link}`;
 
-    // Immagine
     const imgEl = $(el).find('img');
     const imageUrl = imgEl.attr('data-src') || imgEl.attr('src') || '';
 
-    // Località
     const location = $(el)
       .find('div.ad-detail-location')
       .text()
