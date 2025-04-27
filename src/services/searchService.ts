@@ -24,9 +24,15 @@ export async function searchAcrossMarketplaces(
     marketplace: filters.marketplace || ''
   });
   const res = await fetch(`/api/search?${params.toString()}`);
+  console.log("🔍 fetch URL:", `\/api\/search?${params.toString()}`);
+  const data = await res.json();
+  console.log("📦 search response:", data);
+  return data as SearchResults;
   if (!res.ok) throw new Error('Search API error');
   return res.json() as Promise<SearchResults>;
 }
 
 // il front-end importa `search`, quindi allineiamo l’export
+export const search = searchAcrossMarketplaces;
+
 export const search = searchAcrossMarketplaces;
