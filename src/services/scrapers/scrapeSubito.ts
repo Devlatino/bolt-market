@@ -1,3 +1,4 @@
+import puppeteer from 'puppeteer';
 import { load } from 'cheerio';
 import chromium from 'chrome-aws-lambda';
 import type { Browser } from 'puppeteer-core';

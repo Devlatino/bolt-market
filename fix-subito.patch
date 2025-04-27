@@ -1,0 +1,25 @@
+*** Begin Patch
+*** Update File: src/services/scrapers/scrapeSubito.ts
+@@
+-import chromium from 'chrome-aws-lambda';
++import chromium from 'chrome-aws-lambda';
++import puppeteer from 'puppeteer';
+@@ export async function scrapeSubito(query: string): Promise<Item[]> {
+-  const browser: Browser = await chromium.puppeteer.launch({
+-    args: chromium.args,
+-    defaultViewport: chromium.defaultViewport,
+-    executablePath: await chromium.executablePath,
+-    headless: chromium.headless,
+-  });
++  // Fallback: usa chrome-aws-lambda o puppeteer in locale
++  const exePath = await chromium.executablePath;
++  const launchOptions = {
++    args: chromium.args,
++    defaultViewport: chromium.defaultViewport,
++    executablePath: exePath || undefined,
++    headless: chromium.headless,
++  };
++  const browser: Browser = exePath
++    ? await chromium.puppeteer.launch(launchOptions)
++    : await puppeteer.launch({ headless: true });
+*** End Patch
