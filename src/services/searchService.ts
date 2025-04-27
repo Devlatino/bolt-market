@@ -33,6 +33,6 @@ export async function searchAcrossMarketplaces(
 }
 
 // il front-end importa `search`, quindi allineiamo l’export
-export const search = searchAcrossMarketplaces;
+
 
 export const search = searchAcrossMarketplaces;
