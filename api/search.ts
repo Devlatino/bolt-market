@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { scrapeSubito } from '../src/services/scrapers/scrapeSubito';
 import { scrapeEbay } from '../src/services/scrapers/scrapeEbay';
 
+const MAX_PER_PAGE = 20;
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log('🔔 api/search invoked with', req.query);
   const q = (req.query.q as string) ?? '';
@@ -18,7 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Pagination
     const page    = parseInt(req.query.page as string) || 1;
-    const perPage = 20;  // scegli tu il size desiderato
+    const perPage = MAX_PER_PAGE;
     const start   = (page - 1) * perPage;
     const items   = all.slice(start, start + perPage);
     const hasMore = all.length > page * perPage;

@@ -17,11 +17,11 @@ export async function searchAcrossMarketplaces(
   filters: Filters = {}
 ): Promise<SearchResults> {
   const params = new URLSearchParams({
-    q:        query,
-    page:     page.toString(),
-    priceMin: filters.priceMin?.toString()  || '',
-    priceMax: filters.priceMax?.toString()  || '',
-    marketplace: filters.marketplace || ''
+    q: query,
+    page: page.toString(),
+    priceMin: filters.priceMin?.toString() || '',
+    priceMax: filters.priceMax?.toString() || '',
+    marketplace: filters.marketplace || '',
   });
 
   console.log("🔍 fetch URL:", `/api/search?${params.toString()}`);
@@ -32,10 +32,7 @@ export async function searchAcrossMarketplaces(
     throw new Error(`Search API failed with status ${res.status}`);
   }
 
-  const data = await res.json() as SearchResults;
+  const data = (await res.json()) as SearchResults;
   console.log("📦 search response:", data);
   return data;
 }
-
-// Il front‐end importa `search`, quindi allineiamo l’export
-export const search = searchAcrossMarketplaces;
