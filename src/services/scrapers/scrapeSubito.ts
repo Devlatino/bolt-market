@@ -1,33 +1,32 @@
-import puppeteer from 'puppeteer';
-import { load } from 'cheerio';
+import type { ListingItem } from '../../types';
 import chromium from 'chrome-aws-lambda';
-import type { Browser } from 'puppeteer-core';
+import puppeteer from 'puppeteer-core';
 
-export interface Item { title: string; price: number; url: string; imageUrl: string; site: string; }
-
-export async function scrapeSubito(query: string): Promise<Item[]> {
-  const browser: Browser = await chromium.puppeteer.launch({
+export async function scrapeSubito(query: string): Promise<ListingItem[]> {
+  const executablePath = await chromium.executablePath;
+  const browser = await puppeteer.launch({
     args: chromium.args,
     defaultViewport: chromium.defaultViewport,
-    executablePath: await chromium.executablePath,
+    executablePath,
     headless: chromium.headless,
   });
   const page = await browser.newPage();
-  const url = `https://www.subito.it/annunci-italia/vendita/usato/?q=${encodeURIComponent(query)}`;
-  await page.goto(url, { waitUntil: 'networkidle0' });
-  const html = await page.content();
-  await browser.close();
-
-  const $ = load(html);
-  const items: Item[] = [];
-  $('.items-list .ItemSnippet').each((_, el) => {
-    const title = $(el).find('.ItemSnippet__title').text().trim();
-    const priceText = $(el).find('.ItemSnippet__price').text().replace(/[^0-9,.]/g, '').replace(',', '.');
-    const price = parseFloat(priceText) || 0;
-    const relative = $(el).find('a').attr('href') ?? '';
-    const urlItem = relative.startsWith('http') ? relative : `https://www.subito.it${relative}`;
-    const imageUrl = $(el).find('img').attr('src') ?? '';
-    items.push({ title, price, url: urlItem, imageUrl, site: 'Subito' });
+  await page.goto(
+    \`https://www.subito.it/annunci-italia/vendita/tutto/?q=\${encodeURIComponent(query)}\`,
+    { waitUntil: 'networkidle2', timeout: 60000 }
+  );
+  const items = await page.evaluate(() => {
+    const rows = document.querySelectorAll<HTMLAnchorElement>('ul.items-list li > a');
+    return Array.from(rows).map(a => ({
+      title: a.querySelector('.item-title')?.textContent?.trim() || '',
+      price: parseFloat(
+        (a.querySelector('.item-price')?.textContent || '')
+          .replace(/[^\d,.]/g, '')
+          .replace(',', '.')
+      ),
+      url: a.href
+    }));
   });
+  await browser.close();
   return items;
 }
