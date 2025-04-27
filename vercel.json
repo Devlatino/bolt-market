@@ -6,7 +6,7 @@
     "outputDirectory": "dist",
   
     "rewrites": [
-      { "handle": "filesystem" },          // ⬅️  fermati se il file esiste
+      { "handle": "filesystem" },
       { "source": "/(.*)", "destination": "/index.html" }
     ]
   }
