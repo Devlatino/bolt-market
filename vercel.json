@@ -1,10 +1,5 @@
 {
   "version": 2,
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "nodejs18.x"
-    }
-  },
   "builds": [
     {
       "src": "package.json",
@@ -18,7 +13,6 @@
   ],
   "routes": [
     { "handle": "filesystem" },
-    { "src": "/api/(.*)",    "dest": "/api/$1.ts" },
     { "src": "/assets/(.*)", "dest": "/assets/$1" },
     { "src": "/(.*)",        "dest": "/index.html" }
   ]
