@@ -1,55 +1,27 @@
-// src/services/scrapers/scrapeEbay.ts
-import type { ListingItem } from '../../types';
-import axios from 'axios';
-import { load } from 'cheerio';
+// src/services/scrapers/scrapeEbay.js
 
-export async function scrapeEbay(query: string): Promise<ListingItem[]> {
-  console.log(`🚀 [scrapeEbay] start for query="${query}"`);
+const axios = require('axios');
+const cheerio = require('cheerio');
 
+async function scrapeEbay(query, { priceMin, priceMax, marketplace }) {
   const url = `https://www.ebay.it/sch/i.html?_nkw=${encodeURIComponent(query)}`;
-  console.log(`📡 [scrapeEbay] fetching URL: ${url}`);
+  const { data: html } = await axios.get(url);
+  const $ = cheerio.load(html);
 
-  const resp = await axios.get(url);
-  const $ = load(resp.data);
-  const items: ListingItem[] = [];
-
+  const items = [];
   $('.s-item').each((_, el) => {
     const title = $(el).find('.s-item__title').text().trim();
-    if (!title || title.toLowerCase().includes('annuncio sponsorizzato')) return;
+    const link  = $(el).find('.s-item__link').attr('href');
+    const img   = $(el).find('.s-item__image-img').attr('src') ||
+                  $(el).find('.s-item__image-img').attr('data-src');
+    const price = $(el).find('.s-item__price').first().text().trim();
 
-    const priceText = $(el).find('.s-item__price').first().text().trim();
-    const price = parseFloat(
-      priceText.replace(/[^\d.,]/g, '').replace(',', '.')
-    ) || 0;
-
-    const link = $(el).find('.s-item__link').attr('href') || '';
-    
-    // Immagine: prima prova data-src, poi src
-    const imgEl = $(el).find('img.s-item__image-img, img');
-    const imageUrl =
-      imgEl.attr('data-src')?.trim() ||
-      imgEl.attr('src')?.trim() ||
-      '';
-
-    const location = $(el)
-      .find('.s-item__location')
-      .text()
-      .replace(/^Da\s+/i, '')
-      .trim() || '';
-
-    items.push({
-      id: link,
-      title,
-      description: '',
-      price,
-      imageUrl,
-      url: link,
-      source: 'ebay',
-      location,
-      date: Date.now(),
-    });
+    if (title && link) {
+      items.push({ source: 'ebay', title, link, img, price });
+    }
   });
 
-  console.log(`✅ [scrapeEbay] found ${items.length} items`);
   return items;
 }
+
+module.exports = { scrapeEbay };

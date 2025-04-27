@@ -1,7 +1,7 @@
 // api/search.js
 
-const scrapeEbay   = require('../src/services/scrapers/scrapeEbay');
-const scrapeSubito = require('../src/services/scrapers/scrapeSubito');
+const { scrapeEbay }   = require('../src/services/scrapers/scrapeEbay');
+const { scrapeSubito } = require('../src/services/scrapers/scrapeSubito');
 
 /**
  * Alterna gli elementi di due array in uscita:
@@ -18,16 +18,15 @@ function interleave(arr1, arr2) {
 }
 
 module.exports = async function handler(req, res) {
-  const q          = req.query.q || '';
-  const page       = parseInt(req.query.page, 10) || 1;
-  const perPage    = 20;
-  // opzionali, se vorrai usarli nei tuoi scraper
-  const priceMin   = req.query.priceMin || '';
-  const priceMax   = req.query.priceMax || '';
-  const marketplace= req.query.marketplace || 'all';
+  const q           = req.query.q || '';
+  const page        = parseInt(req.query.page, 10) || 1;
+  const perPage     = 20;
+  const priceMin    = req.query.priceMin || '';
+  const priceMax    = req.query.priceMax || '';
+  const marketplace = req.query.marketplace || 'all';
 
   try {
-    // Esegui in parallelo i due scraper
+    // Esegui i due scraper in parallelo
     const [ebayItems, subitoItems] = await Promise.all([
       scrapeEbay(q, { priceMin, priceMax, marketplace }),
       scrapeSubito(q, { priceMin, priceMax, marketplace }),
@@ -41,9 +40,9 @@ module.exports = async function handler(req, res) {
     const paged   = allItems.slice(start, start + perPage);
     const hasMore = allItems.length > start + perPage;
 
-    return res.status(200).json({ items: paged, hasMore });
+    res.status(200).json({ items: paged, hasMore });
   } catch (err) {
     console.error('Search API error:', err);
-    return res.status(500).json({ error: 'Errore interno del server' });
+    res.status(500).json({ error: 'Errore interno del server' });
   }
 };
