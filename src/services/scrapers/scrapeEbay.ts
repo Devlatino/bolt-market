@@ -25,7 +25,8 @@ export async function scrapeEbay(query: string): Promise<ListingItem[]> {
     const priceText = $el.find('.s-item__price').first().text().trim();
     const price = parseFloat(
       priceText
-        .replace(/[^\d.,]/g, '')
+        .replace(/[^
+\d.,]/g, '')
         .replace(/\./g, '')
         .replace(',', '.')
     ) || 0;

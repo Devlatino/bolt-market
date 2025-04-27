@@ -1,18 +1,13 @@
 // File: src/services/scrapers/scrapeSubito.ts
 import chromium from 'chrome-aws-lambda';
 import type { ListingItem } from '../../types';
-import puppeteer from 'puppeteer-core';
 
 export async function scrapeSubito(query: string): Promise<ListingItem[]> {
-  const execPath = await chromium.executablePath;
-  if (!execPath) {
-    throw new Error('Chrome executable not found for scraping Subito');
-  }
-
-  const browser = await puppeteer.launch({
+  // Usa esclusivamente chrome-aws-lambda e puppeteer incluso
+  const browser = await chromium.puppeteer.launch({
     args: chromium.args,
     defaultViewport: chromium.defaultViewport,
-    executablePath: execPath,
+    executablePath: await chromium.executablePath,
     headless: chromium.headless,
   });
 
@@ -22,7 +17,6 @@ export async function scrapeSubito(query: string): Promise<ListingItem[]> {
       `https://www.subito.it/annunci-italia/vendita/?q=${encodeURIComponent(query)}`,
       { waitUntil: 'networkidle2' }
     );
-    // Attendi che i risultati siano renderizzati
     await page.waitForSelector('ul.items-list li, div[data-testid="card-list"] article');
 
     const rawItems = await page.evaluate(() => {
