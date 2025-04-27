@@ -12,16 +12,13 @@ export async function scrapeSubito(
   console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
 
   const offset = (page - 1) * ITEMS_PER_PAGE;
-  // Base URL senza slash finale
-  const baseUrl = `https://www.subito.it/annunci-italia/vendita/tutto`;
-  // ⚠️ SLASH prima del '?'
+  const baseUrl = `https://www.subito.it/annunci-italia/vendita`;
   const url =
     offset > 0
       ? `${baseUrl}/?q=${encodeURIComponent(query)}&o=${offset}`
       : `${baseUrl}/?q=${encodeURIComponent(query)}`;
 
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
-
   const resp = await axios.get(url, { timeout: 60000 });
   const $ = load(resp.data);
   const items: ListingItem[] = [];
@@ -31,6 +28,7 @@ export async function scrapeSubito(
     const title = anchor.find('h2').text().trim();
     if (!title) return;
 
+    // prezzo
     const priceText = $(el)
       .find('div[data-testid="ad-price"]')
       .text()
@@ -38,19 +36,22 @@ export async function scrapeSubito(
       .replace(',', '.');
     const price = parseFloat(priceText) || 0;
 
+    // link
     const link = anchor.attr('href') || '';
     const itemUrl = link.startsWith('http')
       ? link
       : `https://www.subito.it${link}`;
 
-    // Immagine: lazy-loaded in data-src oppure src
+    // immagine: data-src (lazy) o src
     const imgEl = $(el).find('img');
-    const imageUrl = imgEl.attr('data-src')?.trim() || imgEl.attr('src')?.trim() || '';
+    const imageUrl =
+      imgEl.attr('data-src')?.trim() || imgEl.attr('src')?.trim() || '';
 
+    // location
     const location = $(el)
       .find('div.ad-detail-location')
       .text()
-      .trim() || '';
+      .trim();
 
     items.push({
       id: itemUrl,
