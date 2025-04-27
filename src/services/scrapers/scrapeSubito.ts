@@ -1,4 +1,3 @@
-// src/services/scrapers/scrapeSubito.ts
 import type { ListingItem } from '../../types';
 import axios from 'axios';
 import { load } from 'cheerio';
@@ -23,48 +22,29 @@ export async function scrapeSubito(
   const $ = load(resp.data);
   const items: ListingItem[] = [];
 
-  $('article.js-ad-card').each((_, el) => {
-    const anchor = $(el).find('a[href*="/annunci-italia"]');
-    const title = anchor.find('h2').text().trim();
-    if (!title) return;
-
-    // prezzo
-    const priceText = $(el)
-      .find('div[data-testid="ad-price"]')
-      .text()
-      .replace(/[^\d.,]/g, '')
-      .replace(',', '.');
-    const price = parseFloat(priceText) || 0;
-
-    // link
-    const link = anchor.attr('href') || '';
-    const itemUrl = link.startsWith('http')
-      ? link
-      : `https://www.subito.it${link}`;
-
-    // immagine: data-src (lazy) o src
-    const imgEl = $(el).find('img');
-    const imageUrl =
-      imgEl.attr('data-src')?.trim() || imgEl.attr('src')?.trim() || '';
-
-    // location
-    const location = $(el)
-      .find('div.ad-detail-location')
-      .text()
-      .trim();
-
-    items.push({
-      id: itemUrl,
-      title,
-      description: '',
-      price,
-      imageUrl,
-      url: itemUrl,
-      source: 'subito',
-      location,
-      date: Date.now(),
-    });
-  });
+  // Parsing Next.js embedded data for listings
+  const nextData = $('#__NEXT_DATA__').html();
+  if (nextData) {
+    try {
+      const json = JSON.parse(nextData);
+      const results = json.props.pageProps.listings?.results || [];
+      for (const card of results) {
+        items.push({
+          id: card.id,
+          title: card.title,
+          description: card.attributes?.description || '',
+          price: card.price?.value || 0,
+          imageUrl: card.images?.[0]?.url || '',
+          url: `https://www.subito.it${card.url}`,
+          source: 'subito',
+          location: card.region || '',
+          date: new Date(card.createdAt).getTime(),
+        });
+      }
+    } catch (e) {
+      console.error('❌ [scrapeSubito] errore parsing JSON:', e);
+    }
+  }
 
   console.log(`✅ [scrapeSubito] found ${items.length} items`);
   return items;

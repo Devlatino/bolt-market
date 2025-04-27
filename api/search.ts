@@ -1,61 +1,43 @@
-// api/search.ts
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { scrapeSubito } from '../src/services/scrapers/scrapeSubito';
 import { scrapeEbay } from '../src/services/scrapers/scrapeEbay';
-import type { ListingItem } from '../src/types';
 
-const MAX_PER_PAGE = 20;
+// Costanti
+const ITEMS_PER_PAGE = 20;
 
-function interleaveArrays<T>(a: T[], b: T[]): T[] {
-  const result: T[] = [];
-  const maxLen = Math.max(a.length, b.length);
+// Interleave arrays a round-robin mix
+function interleave(arrays) {
+  const maxLen = Math.max(...arrays.map(a => a.length));
+  const merged = [];
   for (let i = 0; i < maxLen; i++) {
-    if (a[i]) result.push(a[i]);
-    if (b[i]) result.push(b[i]);
+    for (const arr of arrays) {
+      if (arr[i]) merged.push(arr[i]);
+    }
   }
-  return result;
+  return merged;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  console.log('🔔 [api/search] invoked with', req.query);
-  const q = (req.query.q as string) || '';
-  const page = parseInt(req.query.page as string) || 1;
+export default async function handler(req, res) {
+  const { q, page = 1, priceMin, priceMax, marketplace } = req.query;
+  console.log('[api/search] invoked with', req.query);
 
-  if (!q) {
-    return res.status(400).json({ error: 'Missing query' });
-  }
+  // Fetch da tutti i marketplace
+  const [subitoItems, ebayItems] = await Promise.all([
+    scrapeSubito(q, Number(page)),
+    scrapeEbay(q, Number(page)),
+  ]);
 
-  try {
-    const [subitoRes, ebayRes] = await Promise.allSettled([
-      scrapeSubito(q, page),
-      scrapeEbay(q),
-    ]);
+  // Mix risultati
+  let all = interleave([subitoItems, ebayItems]);
 
-    const subitoItems: ListingItem[] =
-      subitoRes.status === 'fulfilled'
-        ? subitoRes.value
-        : (console.error('❌ scrapeSubito failed:', subitoRes.reason), []);
+  // Filtri eventuali (prezzo, source)
+  if (priceMin) all = all.filter(i => i.price >= Number(priceMin));
+  if (priceMax) all = all.filter(i => i.price <= Number(priceMax));
+  if (marketplace && marketplace !== 'all') all = all.filter(i => i.source === marketplace);
 
-    const ebayItems: ListingItem[] =
-      ebayRes.status === 'fulfilled'
-        ? ebayRes.value
-        : (console.error('❌ scrapeEbay failed:', ebayRes.reason), []);
+  const start = (Number(page) - 1) * ITEMS_PER_PAGE;
+  const paged = all.slice(start, start + ITEMS_PER_PAGE);
+  const hasMore = all.length > start + ITEMS_PER_PAGE;
 
-    // Mescola round-robin
-    const all = interleaveArrays(subitoItems, ebayItems);
-
-    // Prendi i primi MAX_PER_PAGE
-    const items = all.slice(0, MAX_PER_PAGE);
-    // Se uno dei due ha restituito esattamente MAX_PER_PAGE, c'è un'altra pagina
-    const hasMore =
-      subitoItems.length === MAX_PER_PAGE || ebayItems.length === MAX_PER_PAGE;
-
-    console.log(`📦 Returning ${items.length} items (hasMore=${hasMore})`);
-
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-    return res.status(200).json({ items, hasMore });
-  } catch (err) {
-    console.error('❌ [api/search] unexpected error:', err);
-    return res.status(500).json({ error: 'Search failed' });
-  }
+  console.log(`📦 Returning ${paged.length} items (hasMore=${hasMore})`);
+  res.status(200).json({ items: paged, hasMore });
 }
