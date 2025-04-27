@@ -6,7 +6,6 @@ import { load } from 'cheerio';
 export async function scrapeEbay(query: string): Promise<ListingItem[]> {
   console.log(`🚀 [scrapeEbay] start for query="${query}"`);
 
-  // Costruzione URL corretta con template literal
   const url = `https://www.ebay.it/sch/i.html?_nkw=${encodeURIComponent(query)}`;
   console.log(`📡 [scrapeEbay] fetching URL: ${url}`);
 
@@ -24,7 +23,14 @@ export async function scrapeEbay(query: string): Promise<ListingItem[]> {
     ) || 0;
 
     const link = $(el).find('.s-item__link').attr('href') || '';
-    const imageUrl = $(el).find('.s-item__image-img').attr('src') || '';
+    
+    // Immagine: prima prova data-src, poi src
+    const imgEl = $(el).find('img.s-item__image-img, img');
+    const imageUrl =
+      imgEl.attr('data-src')?.trim() ||
+      imgEl.attr('src')?.trim() ||
+      '';
+
     const location = $(el)
       .find('.s-item__location')
       .text()

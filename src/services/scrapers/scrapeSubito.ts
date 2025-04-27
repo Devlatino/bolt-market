@@ -3,17 +3,27 @@ import type { ListingItem } from '../../types';
 import axios from 'axios';
 import { load } from 'cheerio';
 
-export async function scrapeSubito(query: string): Promise<ListingItem[]> {
-  console.log(`🚀 [scrapeSubito] start for query="${query}"`);
+const ITEMS_PER_PAGE = 20;
 
-  const url = `https://www.subito.it/annunci-italia/vendita/tutto/?q=${encodeURIComponent(query)}`;
+export async function scrapeSubito(
+  query: string,
+  page: number = 1
+): Promise<ListingItem[]> {
+  console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
+
+  // Calcola l'offset: pagina 1 ⇒ offset 0, pagina 2 ⇒ offset 20, ecc.
+  const offset = (page - 1) * ITEMS_PER_PAGE;
+  const baseUrl = `https://www.subito.it/annunci-italia/vendita/tutto/`;
+  const url = offset > 0
+    ? `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`
+    : `${baseUrl}?q=${encodeURIComponent(query)}`;
+
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
 
   const resp = await axios.get(url, { timeout: 60000 });
   const $ = load(resp.data);
   const items: ListingItem[] = [];
 
-  // Selettore aggiornato per i card di Subito
   $('article.js-ad-card').each((_, el) => {
     const anchor = $(el).find('a[href*="/annunci-italia"]');
     const title = anchor.find('h2').text().trim();
@@ -33,7 +43,7 @@ export async function scrapeSubito(query: string): Promise<ListingItem[]> {
       ? link
       : `https://www.subito.it${link}`;
 
-    // Immagine: ora si trova in data-src o src su <img>
+    // Immagine
     const imgEl = $(el).find('img');
     const imageUrl = imgEl.attr('data-src') || imgEl.attr('src') || '';
 
