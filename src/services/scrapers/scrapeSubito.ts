@@ -1,28 +1,65 @@
-// src/services/scrapers/scrapeSubito.js
+// File: src/services/scrapers/scrapeSubito.ts
+import chromium from 'chrome-aws-lambda';
+import puppeteer from 'puppeteer';
+import type { ListingItem } from '../../types';
 
-const axios = require('axios');
-const cheerio = require('cheerio');
+export async function scrapeSubito(query: string): Promise<ListingItem[]> {
+  const exePath = await chromium.executablePath;
+  const launchOptions = {
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: exePath || undefined,
+    headless: chromium.headless,
+  };
+  const browser = exePath
+    ? await chromium.puppeteer.launch(launchOptions)
+    : await puppeteer.launch({ headless: true });
 
-async function scrapeSubito(query, { priceMin, priceMax, marketplace }) {
-  // Nota: la path corretta per risultati generici è senza "tutto"
-  const url = `https://www.subito.it/annunci-italia/vendita/?q=${encodeURIComponent(query)}`;
-  const { data: html } = await axios.get(url);
-  const $ = cheerio.load(html);
+  try {
+    const page = await browser.newPage();
+    await page.goto(
+      `https://www.subito.it/annunci-italia/vendita/?q=${encodeURIComponent(query)}`,
+      { waitUntil: 'networkidle2' }
+    );
+    // Attendi che i risultati siano renderizzati
+    await page.waitForSelector('ul.items-list li, div[data-testid="card-list"] article');
 
-  const items = [];
-  $('article.Item_card__').each((_, el) => {
-    const title = $(el).find('h2.Item_title__').text().trim();
-    const link  = 'https://www.subito.it' + $(el).find('a').attr('href');
-    const img   = $(el).find('img.Item_image__').attr('src') ||
-                  $(el).find('img.Item_image__').attr('data-src');
-    const price = $(el).find('span.Item_price__').text().trim();
+    const rawItems = await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll('ul.items-list li, div[data-testid="card-list"] article')
+      ) as HTMLElement[];
+      return cards.map(card => {
+        const a = card.querySelector('a');
+        const href = a?.href || '';
+        const titleEl = card.querySelector('h2, h3');
+        const title = titleEl?.textContent?.trim() || '';
+        const imgEl = card.querySelector('img');
+        const img = imgEl?.src || imgEl?.getAttribute('data-src') || '';
+        const priceEl = card.querySelector('[data-testid="price"], .Price_main');
+        const priceText = priceEl?.textContent?.trim() || '';
+        return { href, title, img, priceText };
+      });
+    });
 
-    if (title && link) {
-      items.push({ source: 'subito', title, link, img, price });
-    }
-  });
+    const items: ListingItem[] = rawItems.map(({ href, title, img, priceText }) => {
+      const price = parseFloat(
+        priceText.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.')
+      ) || 0;
+      return {
+        id: href,
+        title,
+        description: title,
+        price,
+        imageUrl: img,
+        url: href,
+        source: 'subito',
+        location: '',
+        date: Date.now(),
+      };
+    });
 
-  return items;
+    return items;
+  } finally {
+    await browser.close();
+  }
 }
-
-module.exports = { scrapeSubito };
