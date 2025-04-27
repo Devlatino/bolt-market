@@ -1,51 +1,42 @@
-import type { ListingItem } from '../../types';
-import axios from 'axios';
-import { load } from 'cheerio';
+// src/services/scrapers/scrapeSubito.js
+const axios = require('axios');
+const cheerio = require('cheerio');
 
-const ITEMS_PER_PAGE = 20;
+async function scrapeSubito(query) {
+  // Costruisco l'URL corretto (notare il solo query string, senza "tutto")
+  const url = `https://www.subito.it/annunci-italia/vendita/?q=${encodeURIComponent(query)}`;
 
-export async function scrapeSubito(
-  query: string,
-  page: number = 1
-): Promise<ListingItem[]> {
-  console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
+  // Prendo l'HTML della pagina con un User-Agent generico
+  const { data: html } = await axios.get(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)' }
+  });
 
-  const offset = (page - 1) * ITEMS_PER_PAGE;
-  const baseUrl = `https://www.subito.it/annunci-italia/vendita`;
-  const url =
-    offset > 0
-      ? `${baseUrl}/?q=${encodeURIComponent(query)}&o=${offset}`
-      : `${baseUrl}/?q=${encodeURIComponent(query)}`;
-
-  console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
-  const resp = await axios.get(url, { timeout: 60000 });
-  const $ = load(resp.data);
-  const items: ListingItem[] = [];
-
-  // Parsing Next.js embedded data for listings
-  const nextData = $('#__NEXT_DATA__').html();
-  if (nextData) {
-    try {
-      const json = JSON.parse(nextData);
-      const results = json.props.pageProps.listings?.results || [];
-      for (const card of results) {
-        items.push({
-          id: card.id,
-          title: card.title,
-          description: card.attributes?.description || '',
-          price: card.price?.value || 0,
-          imageUrl: card.images?.[0]?.url || '',
-          url: `https://www.subito.it${card.url}`,
-          source: 'subito',
-          location: card.region || '',
-          date: new Date(card.createdAt).getTime(),
-        });
-      }
-    } catch (e) {
-      console.error('❌ [scrapeSubito] errore parsing JSON:', e);
-    }
+  // Carico il DOM e cerco lo script con il JSON di Next.js
+  const $ = cheerio.load(html);
+  const nextDataScript = $('#__NEXT_DATA__').html();
+  if (!nextDataScript) {
+    // Se non lo trovo, significa che la pagina non ha risultati o il markup è cambiato
+    return [];
   }
 
-  console.log(`✅ [scrapeSubito] found ${items.length} items`);
-  return items;
+  // Estraggo e parsifico il JSON
+  const nextData = JSON.parse(nextDataScript);
+
+  // Scorro gli items che Subito espone in pageProps.searchResults.items
+  const items = nextData
+    .props
+    .pageProps
+    .searchResults
+    ?.items || [];
+
+  // Mappo in formato uniforme
+  return items.map(item => ({
+    title:       item.name,
+    price:       item.price?.value || null,
+    url:         `https://www.subito.it${item.url}`,
+    image:       item.images?.[0]?.url || null,
+    marketplace: 'subito',
+  }));
 }
+
+module.exports = scrapeSubito;

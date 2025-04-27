@@ -1,43 +1,49 @@
-import { scrapeSubito } from '../src/services/scrapers/scrapeSubito';
-import { scrapeEbay } from '../src/services/scrapers/scrapeEbay';
+// api/search.js
 
-// Costanti
-const ITEMS_PER_PAGE = 20;
+const scrapeEbay   = require('../src/services/scrapers/scrapeEbay');
+const scrapeSubito = require('../src/services/scrapers/scrapeSubito');
 
-// Interleave arrays a round-robin mix
-function interleave(arrays) {
-  const maxLen = Math.max(...arrays.map(a => a.length));
-  const merged = [];
-  for (let i = 0; i < maxLen; i++) {
-    for (const arr of arrays) {
-      if (arr[i]) merged.push(arr[i]);
-    }
+/**
+ * Alterna gli elementi di due array in uscita:
+ * [e0, e1, e2], [s0, s1, s2, s3] → [e0, s0, e1, s1, e2, s2, s3]
+ */
+function interleave(arr1, arr2) {
+  const out = [];
+  const max = Math.max(arr1.length, arr2.length);
+  for (let i = 0; i < max; i++) {
+    if (arr1[i]) out.push(arr1[i]);
+    if (arr2[i]) out.push(arr2[i]);
   }
-  return merged;
+  return out;
 }
 
-export default async function handler(req, res) {
-  const { q, page = 1, priceMin, priceMax, marketplace } = req.query;
-  console.log('[api/search] invoked with', req.query);
+module.exports = async function handler(req, res) {
+  const q          = req.query.q || '';
+  const page       = parseInt(req.query.page, 10) || 1;
+  const perPage    = 20;
+  // opzionali, se vorrai usarli nei tuoi scraper
+  const priceMin   = req.query.priceMin || '';
+  const priceMax   = req.query.priceMax || '';
+  const marketplace= req.query.marketplace || 'all';
 
-  // Fetch da tutti i marketplace
-  const [subitoItems, ebayItems] = await Promise.all([
-    scrapeSubito(q, Number(page)),
-    scrapeEbay(q, Number(page)),
-  ]);
+  try {
+    // Esegui in parallelo i due scraper
+    const [ebayItems, subitoItems] = await Promise.all([
+      scrapeEbay(q, { priceMin, priceMax, marketplace }),
+      scrapeSubito(q, { priceMin, priceMax, marketplace }),
+    ]);
 
-  // Mix risultati
-  let all = interleave([subitoItems, ebayItems]);
+    // Mescola i risultati
+    const allItems = interleave(ebayItems, subitoItems);
 
-  // Filtri eventuali (prezzo, source)
-  if (priceMin) all = all.filter(i => i.price >= Number(priceMin));
-  if (priceMax) all = all.filter(i => i.price <= Number(priceMax));
-  if (marketplace && marketplace !== 'all') all = all.filter(i => i.source === marketplace);
+    // Paginazione
+    const start   = (page - 1) * perPage;
+    const paged   = allItems.slice(start, start + perPage);
+    const hasMore = allItems.length > start + perPage;
 
-  const start = (Number(page) - 1) * ITEMS_PER_PAGE;
-  const paged = all.slice(start, start + ITEMS_PER_PAGE);
-  const hasMore = all.length > start + ITEMS_PER_PAGE;
-
-  console.log(`📦 Returning ${paged.length} items (hasMore=${hasMore})`);
-  res.status(200).json({ items: paged, hasMore });
-}
+    return res.status(200).json({ items: paged, hasMore });
+  } catch (err) {
+    console.error('Search API error:', err);
+    return res.status(500).json({ error: 'Errore interno del server' });
+  }
+};
