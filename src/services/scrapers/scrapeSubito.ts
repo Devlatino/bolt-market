@@ -12,12 +12,13 @@ export async function scrapeSubito(
   console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
 
   const offset = (page - 1) * ITEMS_PER_PAGE;
-  // NOTA: rimosso slash finale da `tutto`
+  // Base URL senza slash finale
   const baseUrl = `https://www.subito.it/annunci-italia/vendita/tutto`;
+  // ⚠️ SLASH prima del '?'
   const url =
     offset > 0
-      ? `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`
-      : `${baseUrl}?q=${encodeURIComponent(query)}`;
+      ? `${baseUrl}/?q=${encodeURIComponent(query)}&o=${offset}`
+      : `${baseUrl}/?q=${encodeURIComponent(query)}`;
 
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
 
@@ -42,8 +43,9 @@ export async function scrapeSubito(
       ? link
       : `https://www.subito.it${link}`;
 
+    // Immagine: lazy-loaded in data-src oppure src
     const imgEl = $(el).find('img');
-    const imageUrl = imgEl.attr('data-src') || imgEl.attr('src') || '';
+    const imageUrl = imgEl.attr('data-src')?.trim() || imgEl.attr('src')?.trim() || '';
 
     const location = $(el)
       .find('div.ad-detail-location')
