@@ -1,21 +1,19 @@
+// src/services/scrapers/scrapeSubito.ts
 import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer';
 import { load } from 'cheerio';
 import type { ListingItem } from '../../types';
 
 export async function scrapeSubito(query: string): Promise<ListingItem[]> {
-  // Prova a usare chrome-aws-lambda, altrimenti fallback su puppeteer locale
-  const exePath = await chromium.executablePath;
-  const launchArgs = {
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    executablePath: exePath || process.env.CHROME_BIN,
-    headless: chromium.headless,
-  };
+  console.log(`🚀 [scrapeSubito] start for query="${query}"`);
 
-  const browser = exePath
-    ? await chromium.puppeteer.launch(launchArgs)
-    : await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+  // Usa solo chrome-aws-lambda per compatibilità con Vercel
+  const executablePath = await chromium.executablePath;
+  const browser = await chromium.puppeteer.launch({
+    args: chromium.args.concat(['--no-sandbox', '--disable-setuid-sandbox']),
+    defaultViewport: chromium.defaultViewport,
+    executablePath,
+    headless: chromium.headless,
+  });
 
   const page = await browser.newPage();
   const url = `https://www.subito.it/annunci-italia/vendita/tutto/?q=${encodeURIComponent(query)}`;
@@ -27,28 +25,29 @@ export async function scrapeSubito(query: string): Promise<ListingItem[]> {
   const $ = load(html);
   const items: ListingItem[] = [];
 
-  $('ul.items-list li > a').each((_, el) => {
-    const title = $(el).find('.item-title').text().trim();
-    const priceText = $(el)
-      .find('.item-price')
-      .text()
+  // Selettore aggiornato alla UI corrente di Subito
+  $('div.ads__unit__content a').each((_, el) => {
+    const title = $(el).find('h2').text().trim();
+    const priceText = $(el).find('.Pricestyles__Price-sc').text()
       .replace(/[^\d.,]/g, '')
       .replace(',', '.');
     const price = parseFloat(priceText) || 0;
     const link = $(el).attr('href') || '';
     const itemUrl = link.startsWith('http') ? link : `https://www.subito.it${link}`;
+
     items.push({
       id: itemUrl,
       title,
-      description: '',      // Subito non fornisce descrizione nella lista
+      description: '',
       price,
-      imageUrl: '',         // se serve, si può estrarre da data-src
+      imageUrl: '',
       url: itemUrl,
       source: 'subito',
-      location: '',         // opzionale, si può parsare da pagina
-      date: Date.now(),     // oppure parsare data se disponibile
+      location: '',
+      date: Date.now(),
     });
   });
 
+  console.log(`✅ [scrapeSubito] found ${items.length} items`);
   return items;
 }
