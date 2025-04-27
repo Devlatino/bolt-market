@@ -1,19 +1,20 @@
 // File: src/services/scrapers/scrapeSubito.ts
 import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer';
 import type { ListingItem } from '../../types';
+import puppeteer from 'puppeteer-core';
 
 export async function scrapeSubito(query: string): Promise<ListingItem[]> {
-  const exePath = await chromium.executablePath;
-  const launchOptions = {
+  const execPath = await chromium.executablePath;
+  if (!execPath) {
+    throw new Error('Chrome executable not found for scraping Subito');
+  }
+
+  const browser = await puppeteer.launch({
     args: chromium.args,
     defaultViewport: chromium.defaultViewport,
-    executablePath: exePath || undefined,
+    executablePath: execPath,
     headless: chromium.headless,
-  };
-  const browser = exePath
-    ? await chromium.puppeteer.launch(launchOptions)
-    : await puppeteer.launch({ headless: true });
+  });
 
   try {
     const page = await browser.newPage();
@@ -41,7 +42,7 @@ export async function scrapeSubito(query: string): Promise<ListingItem[]> {
       });
     });
 
-    const items: ListingItem[] = rawItems.map(({ href, title, img, priceText }) => {
+    return rawItems.map(({ href, title, img, priceText }) => {
       const price = parseFloat(
         priceText.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.')
       ) || 0;
@@ -57,8 +58,6 @@ export async function scrapeSubito(query: string): Promise<ListingItem[]> {
         date: Date.now(),
       };
     });
-
-    return items;
   } finally {
     await browser.close();
   }
