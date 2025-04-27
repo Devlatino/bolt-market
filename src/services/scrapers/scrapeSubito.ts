@@ -1,7 +1,9 @@
 // src/services/scrapers/scrapeSubito.ts
 import type { ListingItem } from '../../types';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { load } from 'cheerio';
+import chromium from 'chrome-aws-lambda';
+import puppeteer from 'puppeteer';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -12,17 +14,59 @@ export async function scrapeSubito(
   console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
 
   const offset = (page - 1) * ITEMS_PER_PAGE;
-  // NOTA: rimosso slash finale da `tutto`
-  const baseUrl = `https://www.subito.it/annunci-italia/vendita/tutto`;
-  const url =
-    offset > 0
-      ? `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`
-      : `${baseUrl}?q=${encodeURIComponent(query)}`;
+  // SUBITO richiede la slash prima dei parametri
+  const baseUrl = `https://www.subito.it/annunci-italia/vendita/tutto/`;
+  const url = `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`;
 
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
 
-  const resp = await axios.get(url, { timeout: 60000 });
-  const $ = load(resp.data);
+  // Header simulano un browser reale
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'Chrome/115.0.0.0 Safari/537.36',
+    'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8',
+  };
+
+  let html: string;
+  try {
+    const resp = await axios.get<string>(url, {
+      headers,
+      timeout: 60000,
+    });
+    html = resp.data;
+  } catch (err) {
+    const e = err as AxiosError;
+    console.warn(
+      `❌ [scrapeSubito] axios failed (status=${e.response?.status}), using Puppeteer fallback`
+    );
+
+    // Fallback su headless browser (chrome-aws-lambda o puppeteer)
+    const exePath = await chromium.executablePath;
+    const browser = exePath
+      ? await chromium.puppeteer.launch({
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: exePath,
+          headless: chromium.headless,
+        })
+      : await puppeteer.launch({ headless: true });
+
+    const pageCtx = await browser.newPage();
+    await pageCtx.setUserAgent(headers['User-Agent']);
+    await pageCtx.setExtraHTTPHeaders({
+      'Accept-Language': headers['Accept-Language'],
+    });
+    await pageCtx.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000,
+    });
+    html = await pageCtx.content();
+    await browser.close();
+  }
+
+  const $ = load(html);
   const items: ListingItem[] = [];
 
   $('article.js-ad-card').each((_, el) => {
@@ -48,7 +92,7 @@ export async function scrapeSubito(
     const location = $(el)
       .find('div.ad-detail-location')
       .text()
-      .trim() || '';
+      .trim();
 
     items.push({
       id: itemUrl,
