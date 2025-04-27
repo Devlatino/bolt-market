@@ -1,47 +1,55 @@
-// File: src/services/scrapers/scrapeEbay.ts
-import axios from 'axios';
-import cheerio from 'cheerio';
+// src/services/scrapers/scrapeEbay.ts
 import type { ListingItem } from '../../types';
+import axios from 'axios';
+import { load } from 'cheerio';
 
 export async function scrapeEbay(query: string): Promise<ListingItem[]> {
+  console.log(`🚀 [scrapeEbay] start for query="${query}"`);
+
   const url = `https://www.ebay.it/sch/i.html?_nkw=${encodeURIComponent(query)}`;
-  const { data: html } = await axios.get(url);
-  const $ = cheerio.load(html);
+  console.log(`📡 [scrapeEbay] fetching URL: ${url}`);
 
+  const resp = await axios.get(url);
+  const $ = load(resp.data);
   const items: ListingItem[] = [];
+
   $('.s-item').each((_, el) => {
-    const $el = $(el);
-    const title = $el.find('.s-item__title').text().trim();
-    const link = $el.find('.s-item__link').attr('href') || '';
+    const title = $(el).find('.s-item__title').text().trim();
+    if (!title || title.toLowerCase().includes('annuncio sponsorizzato')) return;
 
-    // Gestione srcset e placeholder
-    const $img = $el.find('.s-item__image-img');
-    let imgUrl = $img.attr('src') || $img.attr('data-src') || '';
-    if ((!imgUrl || imgUrl.includes('tr/spacer')) && $img.attr('srcset')) {
-      const srcset = $img.attr('srcset')!;
-      imgUrl = srcset.split(',')[0].trim().split(' ')[0];
-    }
+    const priceText = $(el).find('.s-item__price').first().text().trim();
+    const price = parseFloat(
+      priceText.replace(/[^\d.,]/g, '').replace(',', '.')
+    ) || 0;
 
-    // Estrai e normalizza il prezzo
-    const priceText = $el.find('.s-item__price').first().text().trim();
-    const cleaned = priceText.replace(/[^\d.,]/g, '');
-    const normalized = cleaned.replace(/\./g, '').replace(',', '.');
-    const price = parseFloat(normalized) || 0;
+    const link = $(el).find('.s-item__link').attr('href') || '';
+    
+    // Immagine: prima prova data-src, poi src
+    const imgEl = $(el).find('img.s-item__image-img, img');
+    const imageUrl =
+      imgEl.attr('data-src')?.trim() ||
+      imgEl.attr('src')?.trim() ||
+      '';
 
-    if (title && link) {
-      items.push({
-        id: link,
-        title,
-        description: title,
-        price,
-        imageUrl: imgUrl,
-        url: link,
-        source: 'ebay',
-        location: '',
-        date: Date.now(),
-      });
-    }
+    const location = $(el)
+      .find('.s-item__location')
+      .text()
+      .replace(/^Da\s+/i, '')
+      .trim() || '';
+
+    items.push({
+      id: link,
+      title,
+      description: '',
+      price,
+      imageUrl,
+      url: link,
+      source: 'ebay',
+      location,
+      date: Date.now(),
+    });
   });
 
+  console.log(`✅ [scrapeEbay] found ${items.length} items`);
   return items;
 }
