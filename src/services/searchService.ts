@@ -1,3 +1,4 @@
+// src/services/searchService.ts
 import type { ListingItem } from '../types';
 
 export interface Filters {
@@ -31,8 +32,10 @@ export async function searchAcrossMarketplaces(
     console.error("❌ API Error:", res.status, errText);
     throw new Error(`Search API failed with status ${res.status}`);
   }
-
   const data = (await res.json()) as SearchResults;
   console.log("📦 search response:", data);
   return data;
 }
+
+// alias comodo, usato da altri moduli se serve
+export const search = searchAcrossMarketplaces;

@@ -52,6 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`📦 Returning ${items.length} items (hasMore=${hasMore})`);
 
+    // caching edge‐friendly
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     return res.status(200).json({ items, hasMore });
   } catch (err) {
