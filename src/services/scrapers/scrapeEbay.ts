@@ -1,7 +1,7 @@
 // src/services/scrapers/scrapeEbay.ts
 import type { ListingItem } from '../../types';
 import axios from 'axios';
-import cheerio from 'cheerio';
+import { load } from 'cheerio';
 
 export async function scrapeEbay(query: string): Promise<ListingItem[]> {
   console.log(`🚀 [scrapeEbay] start for query="${query}"`);
@@ -11,10 +11,9 @@ export async function scrapeEbay(query: string): Promise<ListingItem[]> {
   console.log(`📡 [scrapeEbay] fetching URL: ${url}`);
 
   const resp = await axios.get(url);
-  const $ = cheerio.load(resp.data);
+  const $ = load(resp.data);
   const items: ListingItem[] = [];
 
-  // Selettore .s-item per ogni annuncio            
   $('.s-item').each((_, el) => {
     const title = $(el).find('.s-item__title').text().trim();
     if (!title || title.toLowerCase().includes('annuncio sponsorizzato')) return;
