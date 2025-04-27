@@ -22,14 +22,11 @@ export async function scrapeEbay(query: string): Promise<ListingItem[]> {
       imgUrl = srcset.split(',')[0].trim().split(' ')[0];
     }
 
+    // Estrai e normalizza il prezzo
     const priceText = $el.find('.s-item__price').first().text().trim();
-    const price = parseFloat(
-      priceText
-        .replace(/[^
-\d.,]/g, '')
-        .replace(/\./g, '')
-        .replace(',', '.')
-    ) || 0;
+    const cleaned = priceText.replace(/[^\d.,]/g, '');
+    const normalized = cleaned.replace(/\./g, '').replace(',', '.');
+    const price = parseFloat(normalized) || 0;
 
     if (title && link) {
       items.push({

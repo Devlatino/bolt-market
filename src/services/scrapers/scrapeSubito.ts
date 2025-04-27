@@ -3,7 +3,6 @@ import chromium from 'chrome-aws-lambda';
 import type { ListingItem } from '../../types';
 
 export async function scrapeSubito(query: string): Promise<ListingItem[]> {
-  // Usa esclusivamente chrome-aws-lambda e puppeteer incluso
   const browser = await chromium.puppeteer.launch({
     args: chromium.args,
     defaultViewport: chromium.defaultViewport,
@@ -37,9 +36,8 @@ export async function scrapeSubito(query: string): Promise<ListingItem[]> {
     });
 
     return rawItems.map(({ href, title, img, priceText }) => {
-      const price = parseFloat(
-        priceText.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.')
-      ) || 0;
+      const priceClean = priceText.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.');
+      const price = parseFloat(priceClean) || 0;
       return {
         id: href,
         title,
