@@ -1,12 +1,11 @@
 {
-    "$schema": "https://openapi.vercel.sh/vercel.json",
+    "$schema": "https://vercel.com/docs/project-configuration#schema",
     "version": 2,
-    // 1) Costruisci con npm run build
     "buildCommand": "npm ci && npm run build",
-    // 2) Servi i file da dist/
+    
     "outputDirectory": "dist",
-    // 3) Fallback SPA per client-side routing
     "rewrites": [
       { "source": "/(.*)", "destination": "/index.html" }
     ]
   }
+  
