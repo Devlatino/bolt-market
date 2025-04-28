@@ -32,11 +32,14 @@ function findAds(obj: any): any[] | null {
 function mapAd(raw: any): ListingItem {
   const title = raw.title || '';
   let price = 0;
-  if (typeof raw.price === 'number') price = raw.price;
-  else if (raw.price?.value) price = Number(raw.price.value) || 0;
-  else if (typeof raw.price === 'string')
-    price = parseFloat(raw.price.replace(/[^
-\d.,]/g, '').replace(',', '.')) || 0;
+  if (typeof raw.price === 'number') {
+    price = raw.price;
+  } else if (raw.price?.value) {
+    price = Number(raw.price.value) || 0;
+  } else if (typeof raw.price === 'string') {
+    // Rimuovo qualunque cosa non cifra, punto o virgola, poi converto la virgola in punto
+    price = parseFloat(raw.price.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+  }
 
   const path = raw.uri || raw.url || raw.link || '';
   const url  = path.startsWith('http') ? path : `https://www.leboncoin.fr${path}`;
@@ -69,8 +72,7 @@ export async function scrapeLeboncoin(query: string, page = 1): Promise<ListingI
   try {
     const resp = await axios.get<string>(searchUrl, {
       headers: {
-        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' + 
-                           'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
         'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8'
       },
       timeout: 60000
@@ -92,8 +94,7 @@ export async function scrapeLeboncoin(query: string, page = 1): Promise<ListingI
         : await puppeteer.launch({ headless: true });
 
       const pg = await browser.newPage();
-      await pg.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+      await pg.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
       await pg.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8' });
       await pg.goto(searchUrl, { waitUntil: 'networkidle2' });
       html = await pg.content();
@@ -133,8 +134,7 @@ export async function scrapeLeboncoin(query: string, page = 1): Promise<ListingI
     const href      = addScheme(e.attr('href') || '');
     const title     = e.find('section.item_infos h2.item_title').text().trim();
     const priceText = e.find('section.item_infos h3.item_price').text();
-    const price     = parseFloat(priceText.replace(/[^
-\d.,]/g, '').replace(',', '.')) || 0;
+    const price     = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
     const imgUrl    = addScheme(e.find('div.item_imagePic span').attr('data-imgsrc') || '');
 
     results.push({
