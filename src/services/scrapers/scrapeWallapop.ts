@@ -1,7 +1,6 @@
 // src/services/scrapers/scrapeWallapop.ts
 import type { ListingItem } from '../../types';
 import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer';
 
 const ITEMS_SELECTOR = 'article[data-testid="card"]';
 const ITEM_TITLE    = 'h3[data-testid="title"]';
@@ -14,20 +13,16 @@ export async function scrapeWallapop(query: string, page = 1): Promise<ListingIt
   const offset = (page - 1) * 20;
   const searchUrl = `https://es.wallapop.com/app/search?searchTerm=${encodeURIComponent(query)}&orderBy=creation_time&offset=${offset}`;
 
-  // Launch headless browser (Chrome AWS Lambda in prod, Puppeteer local)
-  const exePath = await chromium.executablePath;
-  const launchOpts = {
+  // Avvia Chromium headless (chrome-aws-lambda)
+  const browser = await chromium.puppeteer.launch({
     args: chromium.args,
     defaultViewport: chromium.defaultViewport,
-    executablePath: exePath || undefined,
+    executablePath: await chromium.executablePath || undefined,
     headless: chromium.headless,
-  };
-  const browser = exePath
-    ? await chromium.puppeteer.launch(launchOpts)
-    : await puppeteer.launch({ headless: true });
+  });
 
   const pageCtx = await browser.newPage();
-  // User-Agent “real-world” per evitare blocchi
+  // User-Agent real-world per evitare blocchi
   await pageCtx.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
     'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
