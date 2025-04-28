@@ -1,162 +1,145 @@
 // src/services/scrapers/scrapeLeboncoin.ts
-
 import type { ListingItem } from '../../types';
 import axios from 'axios';
 import { load } from 'cheerio';
 import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer-core';
 
 const ITEMS_PER_PAGE = 30;
 
-// Aggiunge "https:" se manca lo schema
-function addSchemeIfMissing(url: string): string {
+// Aggiunge https se serve
+function addScheme(url: string): string {
   if (!url) return url;
   if (url.startsWith('//')) return 'https:' + url;
-  if (!url.match(/^https?:\/\//)) return 'https://' + url;
+  if (!/^https?:\/\//.test(url)) return 'https://' + url;
   return url;
 }
 
-// Cerca l'array di annunci dentro __NEXT_DATA__
-function findAdsArray(obj: any): any[] | null {
-  if (Array.isArray(obj) && obj.length && typeof obj[0] === 'object') {
-    const keys = Object.keys(obj[0]);
-    if (keys.includes('id') && keys.includes('title')) return obj;
-  }
+// Cerca l’array di ads in __NEXT_DATA__
+function findAds(obj: any): any[] | null {
+  if (Array.isArray(obj) && obj[0]?.id && obj[0]?.title) return obj;
   if (obj && typeof obj === 'object') {
     for (const k of Object.keys(obj)) {
-      const found = findAdsArray(obj[k]);
+      const found = findAds(obj[k]);
       if (found) return found;
     }
   }
   return null;
 }
 
-// Mappa un singolo annuncio JSON in ListingItem
-function mapJsonAdToItem(ad: any): ListingItem {
-  const title       = ad.title || '';
-  const description = ad.description || '';
-  let price         = 0;
-  if (typeof ad.price === 'number') price = ad.price;
-  else if (ad.price?.value)      price = Number(ad.price.value) || 0;
-  else if (typeof ad.price === 'string')
-    price = parseFloat(ad.price.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+// Mappa un annuncio raw in ListingItem
+function mapAd(raw: any): ListingItem {
+  const title = raw.title || '';
+  let price = 0;
+  if (typeof raw.price === 'number') price = raw.price;
+  else if (raw.price?.value) price = Number(raw.price.value) || 0;
+  else if (typeof raw.price === 'string')
+    price = parseFloat(raw.price.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
 
-  const linkPath = ad.uri || ad.url || ad.link || '';
-  const url      = linkPath.startsWith('http')
-                   ? linkPath
-                   : `https://www.leboncoin.fr${linkPath}`;
+  const path = raw.uri || raw.url || raw.link || '';
+  const url  = path.startsWith('http') ? path : `https://www.leboncoin.fr${path}`;
+  const imageUrl = raw.images?.[0] || raw.pictures?.[0]?.url || '';
+  const location = raw.location?.city || '';
 
-  const imageUrl = (ad.images && ad.images[0]) ||
-                   (ad.pictures && ad.pictures[0]?.url) ||
-                   '';
+  let date = Date.now();
+  if (raw.creation_date) date = new Date(raw.creation_date).getTime();
+  else if (raw.sort_date) date = new Date(raw.sort_date).getTime();
 
-  const location = ad.location?.city || ad.city || '';
-  let date       = Date.now();
-  if (ad.creation_date) date = new Date(ad.creation_date).getTime();
-  else if (ad.sort_date) date = new Date(ad.sort_date).getTime();
-
-  return { id: url, title, description, price, imageUrl, url, source: 'leboncoin', location, date };
+  return {
+    id:          url,
+    title,
+    description: raw.description || '',
+    price,
+    imageUrl:    imageUrl,
+    url,
+    source:      'leboncoin',
+    location,
+    date
+  };
 }
 
-// Helper per lanciare il browser con chrome-aws-lambda
-async function launchBrowser() {
-  const execPath = await chromium.executablePath;
-  return puppeteer.launch({
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    executablePath: execPath || undefined,
-    headless: chromium.headless,
-  });
-}
-
-// Funzione principale di scraping
-export async function scrapeLeboncoin(
-  query: string,
-  page: number = 1
-): Promise<ListingItem[]> {
-  console.log(`🚀 [scrapeLeboncoin] query="${query}", page=${page}`);
+export async function scrapeLeboncoin(query: string, page = 1): Promise<ListingItem[]> {
+  console.log(`🚀 [scrapeLeboncoin] "${query}", page=${page}`);
   const searchUrl = `https://www.leboncoin.fr/recherche?text=${encodeURIComponent(query)}&page=${page}`;
   let html: string;
 
-  // 1) JSON-first con axios
+  // 1) Provo JSON con axios
   try {
     const resp = await axios.get<string>(searchUrl, {
       headers: {
-        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                           'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-                           'Chrome/115.0.0.0 Safari/537.36',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8',
+        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' + 
+                           'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8'
       },
-      timeout: 60000,
+      timeout: 60000
     });
     html = resp.data;
   } catch {
-    console.warn('⚠️ [scrapeLeboncoin] JSON 403, fallback headless browser');
-    // 2) Headless browser fallback
+    console.warn('⚠️ JSON blocked → fallback headless');
+    // 2) fallback Puppeteer
     try {
-      const browser = await launchBrowser();
-      const pageP   = await browser.newPage();
-      await pageP.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                               'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-                               'Chrome/115.0.0.0 Safari/537.36');
-      await pageP.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8' });
-      await pageP.goto(searchUrl, { waitUntil: 'networkidle2' });
-      html = await pageP.content();
+      const browser = await chromium.puppeteer.launch({
+        args:         chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath,
+        headless:        chromium.headless
+      });
+      const pg = await browser.newPage();
+      await pg.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+                            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+      await pg.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8' });
+      await pg.goto(searchUrl, { waitUntil: 'networkidle2' });
+      html = await pg.content();
       await browser.close();
-    } catch (browserErr) {
-      console.error('❌ [scrapeLeboncoin] errore headless browser:', browserErr);
+    } catch (err) {
+      console.error('❌ headless error:', err);
       return [];
     }
   }
 
   const $ = load(html);
 
-  // ── JSON‐BASED SCRAPING ─────────────────────────────────────────────
+  // ─── JSON PARSING ───────────────────────────
   const script = $('script#__NEXT_DATA__').html();
   if (script) {
     try {
-      const nextData = JSON.parse(script);
-      const adsArray = findAdsArray(nextData);
-      if (adsArray && adsArray.length) {
-        const items = adsArray.map(mapJsonAdToItem);
-        console.log(`✅ [scrapeLeboncoin] JSON-based trovato ${items.length} item`);
+      const data = JSON.parse(script);
+      const ads  = findAds(data);
+      if (ads?.length) {
+        const items = ads.map(mapAd);
+        console.log(`✅ JSON-based: ${items.length} items`);
         return items;
       }
-      console.warn('⚠️ [scrapeLeboncoin] JSON-based ha restituito 0 elementi');
+      console.warn('⚠️ JSON-based zero items');
     } catch (e) {
-      console.error('❌ [scrapeLeboncoin] parsing JSON fallito:', e);
+      console.error('❌ JSON parse failed', e);
     }
   } else {
-    console.warn('⚠️ [scrapeLeboncoin] __NEXT_DATA__ non trovato');
+    console.warn('⚠️ no __NEXT_DATA__');
   }
 
-  // ── HTML FALLBACK (“Scrapy‐style”) ──────────────────────────────────
-  console.warn('⚠️ [scrapeLeboncoin] uso HTML fallback “list_item” selector');
-  const listings: ListingItem[] = [];
-
+  // ─── HTML FALLBACK ───────────────────────────
+  console.warn('⚠️ using HTML fallback selectors');
+  const results: ListingItem[] = [];
   $('section.mainList ul li a.list_item').each((_, el) => {
-    const el$      = $(el);
-    const rawLink  = el$.attr('href') || '';
-    const link     = addSchemeIfMissing(rawLink);
-    const title    = el$.find('section.item_infos h2.item_title').text().trim();
-    const priceStr = el$.find('section.item_infos h3.item_price').text().trim();
-    const price    = parseFloat(priceStr.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
-    const photoRaw = el$.find('div.item_imagePic span').attr('data-imgsrc') || '';
-    const photo    = addSchemeIfMissing(photoRaw);
+    const e  = $(el);
+    const href = addScheme(e.attr('href') || '');
+    const title = e.find('section.item_infos h2.item_title').text().trim();
+    const priceText = e.find('section.item_infos h3.item_price').text();
+    const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+    const imgUrl = addScheme(e.find('div.item_imagePic span').attr('data-imgsrc') || '');
 
-    listings.push({
-      id:          link,
+    results.push({
+      id:          href,
       title,
       description: '',
       price,
-      imageUrl:    photo,
-      url:         link,
+      imageUrl:    imgUrl,
+      url:         href,
       source:      'leboncoin',
-      location:     '',
-      date:         Date.now(),
+      location:    '',
+      date:        Date.now()
     });
   });
-
-  console.log(`✅ [scrapeLeboncoin] HTML fallback trovato ${listings.length} item`);
-  return listings;
+  console.log(`✅ HTML fallback: ${results.length} items`);
+  return results;
 }
