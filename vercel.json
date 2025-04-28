@@ -24,7 +24,7 @@
   ],
   "functions": {
     "api/**/*.ts": {
-      "includeFiles": ["node_modules/chrome-aws-lambda/**/*"]
+      "includeFiles": "node_modules/chrome-aws-lambda/**"
     }
   }
 }
