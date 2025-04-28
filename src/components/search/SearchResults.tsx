@@ -165,6 +165,7 @@ const SearchResults = () => {
                   <option value="ebay">eBay</option>
                   <option value="facebook">Facebook Marketplace</option>
                   <option value="vinted">Vinted</option>
+                  <option value="leboncoin">Leboncoin</option>
                 </select>
               </div>
             </div>
