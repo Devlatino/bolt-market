@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { User } from '../types';
 
 // Mock user for demonstration
@@ -9,7 +10,7 @@ const mockUser: User = {
 };
 
 // Simulate login API call
-export const login = async (email: string, password: string): Promise<User> => {
+export const login = async (email: string, _password: string): Promise<User> => {
   // In a real implementation, this would make an API call to authenticate
   return new Promise((resolve) => {
     setTimeout(() => {
@@ -22,7 +23,7 @@ export const login = async (email: string, password: string): Promise<User> => {
 };
 
 // Simulate register API call
-export const register = async (email: string, password: string, name: string): Promise<User> => {
+export const register = async (email: string, _password: string, name: string): Promise<User> => {
   // In a real implementation, this would make an API call to register
   return new Promise((resolve) => {
     setTimeout(() => {

@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { User, Mail, Bell, Bookmark, Settings, LogOut, Save, Loader2 } from 'lucide-react';
+import { User, Bell, Bookmark, Settings, LogOut, Save, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
 const ProfilePage = () => {
   const { user, updateProfile, logout } = useAuth();
   const [name, setName] = useState(user?.displayName || '');
-  const [email, setEmail] = useState(user?.email || '');
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   

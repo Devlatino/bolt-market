@@ -86,6 +86,7 @@ export const getUserSavedSearches = async (): Promise<SavedSearch[]> => {
 
 // Simulate delete saved search API call
 export const deleteSavedSearch = async (id: string): Promise<void> => {
+  console.log(`Deleting saved search ${id}`);
   // In a real implementation, this would make an API call to delete the saved search
   return new Promise((resolve) => {
     setTimeout(() => {

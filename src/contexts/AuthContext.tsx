@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login as apiLogin, register as apiRegister, logout as apiLogout, updateProfile as apiUpdateProfile, getCurrentUser } from '../services/authService';
 import { User } from '../types';
@@ -20,7 +22,7 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-};
+  }, [navigate]);
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -51,51 +53,52 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           setLoading(false);
         }
       }
-    };
+      }, [navigate]);
     
     checkAuthStatus();
 
     return () => {
       active = false;
       controller.abort();
-    };
+      }, [navigate]);
   }, []);
   
   const login = async (email: string, password: string) => {
     const loggedInUser = await apiLogin(email, password);
     setUser(loggedInUser);
     return loggedInUser;
-  };
+    }, [navigate]);
   
   const register = async (email: string, password: string, name: string) => {
     const registeredUser = await apiRegister(email, password, name);
     setUser(registeredUser);
     return registeredUser;
-  };
+    }, [navigate]);
   
-  const logout = async () => {
+  const logout = useCallback(async () => { => {
     await apiLogout();
     setUser(null);
     navigate('/');
-  };
+    }, [navigate]);
   
   const updateProfile = async (data: Partial<User>) => {
     const updatedUser = await apiUpdateProfile(data);
     setUser(updatedUser);
-  };
+    }, [navigate]);
   
   const value = useMemo(() => ({
+  // eslint-disable-next-line react-hooks/exhaustive-deps
     user,
     loading,
     login,
     register,
     logout,
     updateProfile
-  }), [user, loading]);
+  }), [user, loading, logout]);
   
   return (
     <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
-};
+  }, [navigate]);

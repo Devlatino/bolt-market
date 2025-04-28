@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Trash2, Bell, BellOff, Edit, ArrowLeft, Loader2 } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
 import { getUserSavedSearches, deleteSavedSearch, updateSavedSearch } from '../../services/userService';
 import { SavedSearch } from '../../types';
 import toast from 'react-hot-toast';
 
 const SavedSearches = () => {
-  const { user } = useAuth();
   const [searches, setSearches] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingSearch, setEditingSearch] = useState<SavedSearch | null>(null);
