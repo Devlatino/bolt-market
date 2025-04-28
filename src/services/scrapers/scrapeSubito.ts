@@ -3,7 +3,7 @@ import type { ListingItem } from '../../types';
 import axios, { AxiosError } from 'axios';
 import { load } from 'cheerio';
 import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -14,7 +14,7 @@ export async function scrapeSubito(
   console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
 
   const offset = (page - 1) * ITEMS_PER_PAGE;
-  // Endpoint corretto per ricerca globale (aprile 2025)
+  // Endpoint corretto (aprile 2025)
   const baseUrl = `https://www.subito.it/annunci-italia/vendita/`;
   const url = `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`;
 
@@ -29,39 +29,37 @@ export async function scrapeSubito(
   };
 
   let html: string;
-
   try {
-    // Tentativo con axios
+    // 1) Prima prova con axios
     const resp = await axios.get<string>(url, { headers, timeout: 60000 });
     html = resp.data;
   } catch (err) {
     const e = err as AxiosError;
     console.warn(
-      `❌ [scrapeSubito] axios failed (status=${e.response?.status}), usando Puppeteer fallback`
+      `❌ [scrapeSubito] axios failed (status=${e.response?.status}), uso Puppeteer fallback`
     );
 
+    // 2) Fallback con chrome-aws-lambda o puppeteer-core
     const exePath = await chromium.executablePath;
-    const launchOptions = {
+    const launchOpts = {
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
       executablePath: exePath || undefined,
       headless: chromium.headless,
     };
 
-    // Provo a lanciare con chrome-aws-lambda, altrimenti forzo puppeteer puro
     let browser;
     try {
-      if (exePath) {
-        browser = await chromium.puppeteer.launch(launchOptions);
-      } else {
-        browser = await puppeteer.launch({ headless: true });
-      }
-    } catch (launchError) {
+      browser = exePath
+        ? await chromium.puppeteer.launch(launchOpts)
+        : await puppeteer.launch({ args: chromium.args, headless: true });
+    } catch (launchErr) {
       console.warn(
-        "❌ [scrapeSubito] Puppeteer launch fallito, riprovo con puppeteer standard:",
-        launchError
+        '❌ [scrapeSubito] puppeteer launch fallito, tento con puppeteer-core puro:',
+        launchErr
       );
-      browser = await puppeteer.launch({ headless: true });
+      // forzo sempre puppeteer-core
+      browser = await puppeteer.launch({ args: chromium.args, headless: true });
     }
 
     const pageCtx = await browser.newPage();
@@ -72,6 +70,7 @@ export async function scrapeSubito(
     await browser.close();
   }
 
+  // 3) Parse con Cheerio
   const $ = load(html);
   const items: ListingItem[] = [];
 
