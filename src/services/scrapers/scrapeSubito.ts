@@ -5,6 +5,23 @@ import { load } from 'cheerio';
 
 const ITEMS_PER_PAGE = 20;
 
+/** Cerca ricorsivamente nel JSON un array di oggetti con chiavi 'title' e 'link' */
+function findAdsArray(obj: any): any[] | null {
+  if (Array.isArray(obj) && obj.length > 0 && typeof obj[0] === 'object') {
+    const keys = Object.keys(obj[0]);
+    if (keys.includes('title') && (keys.includes('link') || keys.includes('id'))) {
+      return obj;
+    }
+  }
+  if (obj && typeof obj === 'object') {
+    for (const key of Object.keys(obj)) {
+      const found = findAdsArray(obj[key]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export async function scrapeSubito(
   query: string,
   page: number = 1
@@ -33,7 +50,7 @@ export async function scrapeSubito(
     return [];
   }
 
-  // Carica l'HTML e prendi lo script __NEXT_DATA__
+  // Carica l'HTML e isola __NEXT_DATA__
   const $ = load(html);
   const script = $('#__NEXT_DATA__').html();
   if (!script) {
@@ -45,54 +62,44 @@ export async function scrapeSubito(
   try {
     nextData = JSON.parse(script);
   } catch (err) {
-    console.error('❌ [scrapeSubito] parsing JSON __NEXT_DATA__ fallito:', err);
+    console.error('❌ [scrapeSubito] parsing JSON fallito:', err);
     return [];
   }
 
-  // Individua l'array di annunci dentro il JSON
-  // Controlla la struttura effettiva con un console.log(nextData)
-  const pageProps = nextData.props?.pageProps || {};
-  let ads: any[] = [];
-
-  if (Array.isArray(pageProps.initialAds)) {
-    ads = pageProps.initialAds;
-  } else if (pageProps.ads?.results) {
-    ads = pageProps.ads.results;
-  } else if (pageProps.searchResults?.results) {
-    ads = pageProps.searchResults.results;
-  } else {
+  // Trova dinamicamente l'array di annunci
+  const adsArray = findAdsArray(nextData);
+  if (!adsArray) {
     console.warn('⚠️ [scrapeSubito] non ho trovato l’array di annunci in __NEXT_DATA__');
     return [];
   }
 
-  // Mappa l'array raw in ListingItem[]
-  const items: ListingItem[] = ads.map((ad: any) => {
-    // Prezzo può essere stringa "€123" o oggetto { amount, currency }
-    let price = 0;
+  // Mappa ogni annuncio in ListingItem
+  const items: ListingItem[] = adsArray.map((ad: any) => {
+    const title       = ad.title || '';
+    const linkPath    = ad.link || ad.url || '';
+    const itemUrl     = linkPath.startsWith('http')
+                        ? linkPath
+                        : `https://www.subito.it${linkPath}`;
+    let price: number = 0;
     if (typeof ad.price === 'string') {
       price = parseFloat(ad.price.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
-    } else if (typeof ad.price === 'object' && ad.price.amount) {
+    } else if (ad.price?.amount) {
       price = Number(ad.price.amount) || 0;
     }
-
-    // URL e immagini
-    const link = typeof ad.link === 'string' ? ad.link : ad.link?.url || '';
-    const itemUrl = link.startsWith('http') ? link : `https://www.subito.it${link}`;
-    const imageUrl =
-      (ad.images && ad.images.length && ad.images[0].url) ||
-      ad.image ||
-      '';
+    const imageUrl    = ad.images?.[0]?.url || ad.image || '';
+    const location    = ad.city || ad.location || '';
+    const date        = ad.date ? new Date(ad.date).getTime() : Date.now();
 
     return {
       id:          ad.id ?? itemUrl,
-      title:       ad.title ?? '',
-      description: ad.description ?? '',
+      title,
+      description: ad.description || '',
       price,
       imageUrl,
       url:         itemUrl,
       source:      'subito',
-      location:    ad.city ?? ad.location ?? '',
-      date:        ad.date ? new Date(ad.date).getTime() : Date.now(),
+      location,
+      date,
     };
   });
 
