@@ -1,3 +1,5 @@
+// src/services/userService.ts
+
 import { SavedSearch, NotificationPreferences } from '../types';
 
 // Mock data for saved searches
@@ -68,7 +70,7 @@ export const saveSearch = async (
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      
+
       resolve(newSearch);
     }, 800);
   });
@@ -86,6 +88,7 @@ export const getUserSavedSearches = async (): Promise<SavedSearch[]> => {
 
 // Simulate delete saved search API call
 export const deleteSavedSearch = async (id: string): Promise<void> => {
+  // Log to ensure `id` is “used” and suppresses lint error
   console.log(`Deleting saved search ${id}`);
   // In a real implementation, this would make an API call to delete the saved search
   return new Promise((resolve) => {
