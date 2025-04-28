@@ -2,144 +2,127 @@
 import type { ListingItem } from '../../types';
 import axios from 'axios';
 import { load } from 'cheerio';
-import chromium from 'chrome-aws-lambda';
 
 const ITEMS_PER_PAGE = 30;
 
-// Aggiunge https se serve
-function addScheme(url: string): string {
-  if (!url) return url;
-  if (url.startsWith('//')) return 'https:' + url;
-  if (!/^https?:\/\//.test(url)) return 'https://' + url;
-  return url;
-}
-
-// Cerca l’array di ads in __NEXT_DATA__
-function findAds(obj: any): any[] | null {
-  if (Array.isArray(obj) && obj[0]?.id && obj[0]?.title) return obj;
+/** Cerca ricorsivamente nel JSON un array di oggetti con chiavi 'id' e 'title' */
+function findAdsArray(obj: any): any[] | null {
+  if (Array.isArray(obj) && obj.length > 0 && typeof obj[0] === 'object') {
+    const keys = Object.keys(obj[0]);
+    if (keys.includes('id') && keys.includes('title')) {
+      return obj;
+    }
+  }
   if (obj && typeof obj === 'object') {
-    for (const k of Object.keys(obj)) {
-      const found = findAds(obj[k]);
+    for (const key of Object.keys(obj)) {
+      const found = findAdsArray(obj[key]);
       if (found) return found;
     }
   }
   return null;
 }
 
-// Mappa un annuncio raw in ListingItem
-function mapAd(raw: any): ListingItem {
-  const title = raw.title || '';
+/** Mappa un oggetto JSON di Leboncoin in ListingItem */
+function mapJsonAd(ad: any): ListingItem {
+  const title = ad.title || '';
   let price = 0;
-  if (typeof raw.price === 'number') price = raw.price;
-  else if (raw.price?.value) price = Number(raw.price.value) || 0;
-  else if (typeof raw.price === 'string')
-    price = parseFloat(raw.price.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+  if (typeof ad.price === 'number') price = ad.price;
+  else if (ad.price?.value) price = Number(ad.price.value) || 0;
+  else if (typeof ad.price === 'string') price = parseFloat(ad.price.replace(/[^
+\\d.,]/g, '').replace(',', '.')) || 0;
 
-  const path = raw.uri || raw.url || raw.link || '';
+  const path = ad.uri || ad.url || '';
   const url  = path.startsWith('http') ? path : `https://www.leboncoin.fr${path}`;
-  const imageUrl = raw.images?.[0] || raw.pictures?.[0]?.url || '';
-  const location = raw.location?.city || '';
 
-  let date = Date.now();
-  if (raw.creation_date) date = new Date(raw.creation_date).getTime();
-  else if (raw.sort_date) date = new Date(raw.sort_date).getTime();
+  const imageUrl = ad.images?.[0] || ad.pictures?.[0]?.url || '';
+  const location = ad.location?.city || '';
+  const date = ad.creation_date
+    ? new Date(ad.creation_date).getTime()
+    : ad.sort_date
+      ? new Date(ad.sort_date).getTime()
+      : Date.now();
 
   return {
     id:          url,
     title,
-    description: raw.description || '',
+    description: ad.description || '',
     price,
-    imageUrl:    imageUrl,
+    imageUrl,
     url,
     source:      'leboncoin',
     location,
-    date
+    date,
   };
 }
 
-export async function scrapeLeboncoin(query: string, page = 1): Promise<ListingItem[]> {
-  console.log(`🚀 [scrapeLeboncoin] "${query}", page=${page}`);
-  const searchUrl = `https://www.leboncoin.fr/recherche?text=${encodeURIComponent(query)}&page=${page}`;
-  let html: string;
+export async function scrapeLeboncoin(
+  query: string,
+  page = 1
+): Promise<ListingItem[]> {
+  console.log(`🚀 [scrapeLeboncoin] start for query="${query}", page=${page}`);
+  const url = `https://www.leboncoin.fr/recherche?text=${encodeURIComponent(query)}&page=${page}`;
 
-  // 1) Provo JSON con axios
+  let html: string;
   try {
-    const resp = await axios.get<string>(searchUrl, {
+    const resp = await axios.get<string>(url, {
       headers: {
-        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' + 
+        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
                            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
         'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8'
       },
-      timeout: 60000
+      timeout: 60000,
     });
     html = resp.data;
-  } catch {
-    console.warn('⚠️ JSON blocked → fallback headless');
-    // 2) fallback Puppeteer
-    try {
-      const browser = await chromium.puppeteer.launch({
-        args:         chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath,
-        headless:        chromium.headless
-      });
-      const pg = await browser.newPage();
-      await pg.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
-      await pg.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8' });
-      await pg.goto(searchUrl, { waitUntil: 'networkidle2' });
-      html = await pg.content();
-      await browser.close();
-    } catch (err) {
-      console.error('❌ headless error:', err);
-      return [];
-    }
+  } catch (err) {
+    console.error('❌ [scrapeLeboncoin] axios GET failed:', err);
+    return [];
   }
 
   const $ = load(html);
-
-  // ─── JSON PARSING ───────────────────────────
-  const script = $('script#__NEXT_DATA__').html();
+  // ─── JSON-BASED ─────────────────────────────────────────
+  const script = $('#__NEXT_DATA__').html();
   if (script) {
     try {
       const data = JSON.parse(script);
-      const ads  = findAds(data);
+      const ads = findAdsArray(data);
       if (ads?.length) {
-        const items = ads.map(mapAd);
-        console.log(`✅ JSON-based: ${items.length} items`);
+        const items = ads.map(mapJsonAd);
+        console.log(`✅ [scrapeLeboncoin] JSON-based found ${items.length} items`);
         return items;
       }
-      console.warn('⚠️ JSON-based zero items');
-    } catch (e) {
-      console.error('❌ JSON parse failed', e);
+      console.warn('⚠️ [scrapeLeboncoin] JSON-based zero items');
+    } catch (err) {
+      console.error('❌ [scrapeLeboncoin] JSON parse failed:', err);
     }
   } else {
-    console.warn('⚠️ no __NEXT_DATA__');
+    console.warn('⚠️ [scrapeLeboncoin] __NEXT_DATA__ not found');
   }
 
-  // ─── HTML FALLBACK ───────────────────────────
-  console.warn('⚠️ using HTML fallback selectors');
-  const results: ListingItem[] = [];
+  // ─── HTML FALLBACK ─────────────────────────────────────────
+  console.warn('⚠️ [scrapeLeboncoin] using HTML fallback selectors');
+  const items: ListingItem[] = [];
   $('section.mainList ul li a.list_item').each((_, el) => {
-    const e  = $(el);
-    const href = addScheme(e.attr('href') || '');
+    const e = $(el);
     const title = e.find('section.item_infos h2.item_title').text().trim();
     const priceText = e.find('section.item_infos h3.item_price').text();
     const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
-    const imgUrl = addScheme(e.find('div.item_imagePic span').attr('data-imgsrc') || '');
+    const href = e.attr('href') || '';
+    const itemUrl = href.startsWith('http') ? href : `https://www.leboncoin.fr${href}`;
+    const imgUrl = e.find('div.item_imagePic span').attr('data-imgsrc') || '';
+    const date = Date.now();
 
-    results.push({
-      id:          href,
+    items.push({
+      id:          itemUrl,
       title,
       description: '',
       price,
       imageUrl:    imgUrl,
-      url:         href,
+      url:         itemUrl,
       source:      'leboncoin',
       location:    '',
-      date:        Date.now()
+      date,
     });
   });
-  console.log(`✅ HTML fallback: ${results.length} items`);
-  return results;
+  console.log(`✅ [scrapeLeboncoin] HTML fallback found ${items.length} items`);
+  return items;
 }
