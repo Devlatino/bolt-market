@@ -4,6 +4,7 @@ import type { ListingItem } from '../../types';
 import axios from 'axios';
 import { load } from 'cheerio';
 import chromium from 'chrome-aws-lambda';
+import puppeteer from 'puppeteer-core';
 
 const ITEMS_PER_PAGE = 30;
 
@@ -34,7 +35,8 @@ function mapAd(raw: any): ListingItem {
   if (typeof raw.price === 'number') price = raw.price;
   else if (raw.price?.value) price = Number(raw.price.value) || 0;
   else if (typeof raw.price === 'string')
-    price = parseFloat(raw.price.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+    price = parseFloat(raw.price.replace(/[^
+\d.,]/g, '').replace(',', '.')) || 0;
 
   const path = raw.uri || raw.url || raw.link || '';
   const url  = path.startsWith('http') ? path : `https://www.leboncoin.fr${path}`;
@@ -76,14 +78,19 @@ export async function scrapeLeboncoin(query: string, page = 1): Promise<ListingI
     html = resp.data;
   } catch {
     console.warn('⚠️ JSON blocked → fallback headless');
-    // 2) fallback Puppeteer
+    // 2) fallback headless con chrome-aws-lambda o puppeteer-core
     try {
-      const browser = await chromium.puppeteer.launch({
-        args:         chromium.args,
+      const exePath = await chromium.executablePath;
+      const launchOptions = {
+        args:            chromium.args,
         defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath,
+        executablePath:  exePath || undefined,
         headless:        chromium.headless
-      });
+      };
+      const browser = exePath
+        ? await chromium.puppeteer.launch(launchOptions)
+        : await puppeteer.launch({ headless: true });
+
       const pg = await browser.newPage();
       await pg.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
                             'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
@@ -122,12 +129,13 @@ export async function scrapeLeboncoin(query: string, page = 1): Promise<ListingI
   console.warn('⚠️ using HTML fallback selectors');
   const results: ListingItem[] = [];
   $('section.mainList ul li a.list_item').each((_, el) => {
-    const e  = $(el);
-    const href = addScheme(e.attr('href') || '');
-    const title = e.find('section.item_infos h2.item_title').text().trim();
+    const e         = $(el);
+    const href      = addScheme(e.attr('href') || '');
+    const title     = e.find('section.item_infos h2.item_title').text().trim();
     const priceText = e.find('section.item_infos h3.item_price').text();
-    const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
-    const imgUrl = addScheme(e.find('div.item_imagePic span').attr('data-imgsrc') || '');
+    const price     = parseFloat(priceText.replace(/[^
+\d.,]/g, '').replace(',', '.')) || 0;
+    const imgUrl    = addScheme(e.find('div.item_imagePic span').attr('data-imgsrc') || '');
 
     results.push({
       id:          href,
