@@ -25,7 +25,7 @@ const SearchResults = () => {
   const [filters, setFilters] = useState({
     priceMin: '',
     priceMax: '',
-    marketplace: 'all'
+    marketplace: 'all' as string
   });
 
   useEffect(() => {
@@ -46,7 +46,11 @@ const SearchResults = () => {
       } else {
         setIsLoadingMore(true);
       }
-      const { items, hasMore } = await searchAcrossMarketplaces(query, page, filters);
+      const { items, hasMore } = await searchAcrossMarketplaces(query, page, {
+        priceMin: filters.priceMin ? Number(filters.priceMin) : undefined,
+        priceMax: filters.priceMax ? Number(filters.priceMax) : undefined,
+        marketplace: filters.marketplace
+      });
       setResults(prev => page === 1 ? items : [...prev, ...items]);
       setHasMoreResults(hasMore);
       setCurrentPage(page);
@@ -163,9 +167,8 @@ const SearchResults = () => {
                   <option value="all">Tutti</option>
                   <option value="subito">Subito.it</option>
                   <option value="ebay">eBay</option>
-                  <option value="facebook">Facebook Marketplace</option>
-                  <option value="vinted">Vinted</option>
                   <option value="leboncoin">Leboncoin</option>
+                  <option value="wallapop">Wallapop</option>
                 </select>
               </div>
             </div>

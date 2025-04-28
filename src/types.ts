@@ -1,3 +1,4 @@
+// src/types.ts
 export interface User {
   id: string;
   email: string;
@@ -12,7 +13,7 @@ export interface ListingItem {
   price: number;
   imageUrl: string;
   url: string;
-  source: string;
+  source: string;    // ora può essere 'subito' | 'ebay' | 'leboncoin' | 'wallapop'
   location: string;
   date: string | number;
 }
@@ -23,7 +24,7 @@ export interface SavedSearch {
   filters: {
     priceMin: string;
     priceMax: string;
-    marketplace: string;
+    marketplace: 'all' | 'subito' | 'ebay' | 'leboncoin' | 'wallapop';
   };
   notificationsEnabled: boolean;
   notificationFrequency: 'instant' | 'daily' | 'weekly';
@@ -36,4 +37,15 @@ export interface NotificationPreferences {
   push: boolean;
   emailFrequency: 'instant' | 'daily' | 'weekly';
   browserNotifications: boolean;
+}
+
+export interface Filters {
+  priceMin?: number;
+  priceMax?: number;
+  marketplace?: 'all' | 'subito' | 'ebay' | 'leboncoin' | 'wallapop';
+}
+
+export interface SearchResults {
+  items: ListingItem[];
+  hasMore: boolean;
 }

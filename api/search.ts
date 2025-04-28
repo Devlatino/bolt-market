@@ -1,8 +1,9 @@
 // api/search.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { scrapeSubito }   from '../src/services/scrapers/scrapeSubito';
-import { scrapeEbay }     from '../src/services/scrapers/scrapeEbay';
-import { scrapeLeboncoin } from '../src/services/scrapers/scrapeLeboncoin';
+import { scrapeSubito }     from '../src/services/scrapers/scrapeSubito';
+import { scrapeEbay }       from '../src/services/scrapers/scrapeEbay';
+import { scrapeLeboncoin }  from '../src/services/scrapers/scrapeLeboncoin';
+import { scrapeWallapop }   from '../src/services/scrapers/scrapeWallapop';
 import type { ListingItem } from '../src/types';
 
 const MAX_PER_PAGE = 20;
@@ -30,10 +31,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const [subitoRes, ebayRes, lbcRes] = await Promise.allSettled([
+    const [subitoRes, ebayRes, lbcRes, wallaRes] = await Promise.allSettled([
       scrapeSubito(q, page),
       scrapeEbay(q),
       scrapeLeboncoin(q, page),
+      scrapeWallapop(q, page),
     ]);
 
     const subitoItems: ListingItem[] =
@@ -51,15 +53,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? lbcRes.value
         : (console.error('❌ scrapeLeboncoin failed:', lbcRes.reason), []);
 
-    // Mescola round-robin
-    let allItems = interleaveMany([subitoItems, ebayItems, lbcItems]);
+    const wallapopItems: ListingItem[] =
+      wallaRes.status === 'fulfilled'
+        ? wallaRes.value
+        : (console.error('❌ scrapeWallapop failed:', wallaRes.reason), []);
 
-    // Filtro marketplace
+    // Mescola round-robin
+    let allItems = interleaveMany([
+      subitoItems,
+      ebayItems,
+      lbcItems,
+      wallapopItems
+    ]);
+
+    // Filtro per marketplace
     if (marketplace !== 'all') {
       allItems = allItems.filter(item => item.source === marketplace);
     }
 
-    // Pagina
+    // Paginazione
     const items   = allItems.slice(0, MAX_PER_PAGE);
     const hasMore = allItems.length > MAX_PER_PAGE;
 
