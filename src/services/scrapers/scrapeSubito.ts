@@ -12,13 +12,10 @@ export async function scrapeSubito(
   console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
 
   const offset = (page - 1) * ITEMS_PER_PAGE;
-  // Path corretto per usato
   const baseUrl = 'https://www.subito.it/annunci-italia/vendita/usato/';
   const url     = `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`;
 
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
-
-  // Impostiamo headers per sembrare un browser
   const headers = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
@@ -36,53 +33,67 @@ export async function scrapeSubito(
     return [];
   }
 
-  // Parsiamo il DOM
+  // Carica l'HTML e prendi lo script __NEXT_DATA__
   const $ = load(html);
-  const items: ListingItem[] = [];
+  const script = $('#__NEXT_DATA__').html();
+  if (!script) {
+    console.warn('⚠️ [scrapeSubito] __NEXT_DATA__ non trovato');
+    return [];
+  }
 
-  // Ogni card è dentro un <li data-testid="listing-card">
-  $('li[data-testid="listing-card"]').each((_, el) => {
-    const $el = $(el);
-    const anchor = $el.find('a[href*="/annunci-italia"]');
-    const title  = anchor.find('h3').text().trim();
-    if (!title) return;
+  let nextData: any;
+  try {
+    nextData = JSON.parse(script);
+  } catch (err) {
+    console.error('❌ [scrapeSubito] parsing JSON __NEXT_DATA__ fallito:', err);
+    return [];
+  }
 
-    const priceText = $el
-      .find('[data-testid="ad-price"]')
-      .first()
-      .text()
-      .replace(/[^\d.,]/g, '')
-      .replace(',', '.');
-    const price = parseFloat(priceText) || 0;
+  // Individua l'array di annunci dentro il JSON
+  // Controlla la struttura effettiva con un console.log(nextData)
+  const pageProps = nextData.props?.pageProps || {};
+  let ads: any[] = [];
 
-    const link = anchor.attr('href') || '';
-    const itemUrl = link.startsWith('http')
-      ? link
-      : `https://www.subito.it${link}`;
+  if (Array.isArray(pageProps.initialAds)) {
+    ads = pageProps.initialAds;
+  } else if (pageProps.ads?.results) {
+    ads = pageProps.ads.results;
+  } else if (pageProps.searchResults?.results) {
+    ads = pageProps.searchResults.results;
+  } else {
+    console.warn('⚠️ [scrapeSubito] non ho trovato l’array di annunci in __NEXT_DATA__');
+    return [];
+  }
 
-    const imgEl = $el.find('img');
+  // Mappa l'array raw in ListingItem[]
+  const items: ListingItem[] = ads.map((ad: any) => {
+    // Prezzo può essere stringa "€123" o oggetto { amount, currency }
+    let price = 0;
+    if (typeof ad.price === 'string') {
+      price = parseFloat(ad.price.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+    } else if (typeof ad.price === 'object' && ad.price.amount) {
+      price = Number(ad.price.amount) || 0;
+    }
+
+    // URL e immagini
+    const link = typeof ad.link === 'string' ? ad.link : ad.link?.url || '';
+    const itemUrl = link.startsWith('http') ? link : `https://www.subito.it${link}`;
     const imageUrl =
-      imgEl.attr('data-src')?.trim() ||
-      imgEl.attr('src')?.trim() ||
+      (ad.images && ad.images.length && ad.images[0].url) ||
+      ad.image ||
       '';
 
-    const location = $el
-      .find('[data-testid="ad-location"]')
-      .first()
-      .text()
-      .trim();
-
-    items.push({
-      id:       itemUrl,
-      title,
-      description: '',
+    return {
+      id:          ad.id ?? itemUrl,
+      title:       ad.title ?? '',
+      description: ad.description ?? '',
       price,
       imageUrl,
-      url:      itemUrl,
-      source:   'subito',
-      location,
-      date:     Date.now(),
-    });
+      url:         itemUrl,
+      source:      'subito',
+      location:    ad.city ?? ad.location ?? '',
+      date:        ad.date ? new Date(ad.date).getTime() : Date.now(),
+    };
   });
 
   console.log(`✅ [scrapeSubito] found ${items.length} items`);
