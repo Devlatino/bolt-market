@@ -46,13 +46,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Prendi i primi MAX_PER_PAGE
     const items = all.slice(0, MAX_PER_PAGE);
-    // Se uno dei due ha restituito esattamente MAX_PER_PAGE, c'è un'altra pagina
+
+    // Se uno dei due ha almeno MAX_PER_PAGE risultati, c'è ancora un'altra pagina
     const hasMore =
-      subitoItems.length === MAX_PER_PAGE || ebayItems.length === MAX_PER_PAGE;
+      subitoItems.length >= MAX_PER_PAGE || ebayItems.length >= MAX_PER_PAGE;
 
     console.log(`📦 Returning ${items.length} items (hasMore=${hasMore})`);
 
-    // caching edge‐friendly
+    // caching edge-friendly
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     return res.status(200).json({ items, hasMore });
   } catch (err) {

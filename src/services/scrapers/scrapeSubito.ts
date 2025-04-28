@@ -14,8 +14,8 @@ export async function scrapeSubito(
   console.log(`🚀 [scrapeSubito] start for query="${query}", page=${page}`);
 
   const offset = (page - 1) * ITEMS_PER_PAGE;
-  // Subito richiede la slash finale
-  const baseUrl = `https://www.subito.it/annunci-italia/vendita/tutto/`;
+  // Endpoint corretto per ricerca globale (aprile 2025)
+  const baseUrl = `https://www.subito.it/annunci-italia/vendita/`;
   const url = `${baseUrl}?q=${encodeURIComponent(query)}&o=${offset}`;
 
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
@@ -31,23 +31,38 @@ export async function scrapeSubito(
   let html: string;
 
   try {
+    // Tentativo con axios
     const resp = await axios.get<string>(url, { headers, timeout: 60000 });
     html = resp.data;
   } catch (err) {
     const e = err as AxiosError;
     console.warn(
-      `❌ [scrapeSubito] axios failed (status=${e.response?.status}), fallback to Puppeteer`
+      `❌ [scrapeSubito] axios failed (status=${e.response?.status}), usando Puppeteer fallback`
     );
 
     const exePath = await chromium.executablePath;
-    const browser = exePath
-      ? await chromium.puppeteer.launch({
-          args: chromium.args,
-          defaultViewport: chromium.defaultViewport,
-          executablePath: exePath,
-          headless: chromium.headless,
-        })
-      : await puppeteer.launch({ headless: true });
+    const launchOptions = {
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: exePath || undefined,
+      headless: chromium.headless,
+    };
+
+    // Provo a lanciare con chrome-aws-lambda, altrimenti forzo puppeteer puro
+    let browser;
+    try {
+      if (exePath) {
+        browser = await chromium.puppeteer.launch(launchOptions);
+      } else {
+        browser = await puppeteer.launch({ headless: true });
+      }
+    } catch (launchError) {
+      console.warn(
+        "❌ [scrapeSubito] Puppeteer launch fallito, riprovo con puppeteer standard:",
+        launchError
+      );
+      browser = await puppeteer.launch({ headless: true });
+    }
 
     const pageCtx = await browser.newPage();
     await pageCtx.setUserAgent(headers['User-Agent']);
