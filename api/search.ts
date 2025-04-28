@@ -1,34 +1,39 @@
 // api/search.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { scrapeSubito } from '../src/services/scrapers/scrapeSubito';
-import { scrapeEbay } from '../src/services/scrapers/scrapeEbay';
+import { scrapeSubito }   from '../src/services/scrapers/scrapeSubito';
+import { scrapeEbay }     from '../src/services/scrapers/scrapeEbay';
+import { scrapeLeboncoin } from '../src/services/scrapers/scrapeLeboncoin';
 import type { ListingItem } from '../src/types';
 
 const MAX_PER_PAGE = 20;
 
-function interleaveArrays<T>(a: T[], b: T[]): T[] {
+// Round-robin interleaving di N array
+function interleaveMany<T>(arrays: T[][]): T[] {
   const result: T[] = [];
-  const maxLen = Math.max(a.length, b.length);
+  const maxLen = Math.max(...arrays.map(a => a.length));
   for (let i = 0; i < maxLen; i++) {
-    if (a[i]) result.push(a[i]);
-    if (b[i]) result.push(b[i]);
+    for (const arr of arrays) {
+      if (arr[i]) result.push(arr[i]);
+    }
   }
   return result;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log('🔔 [api/search] invoked with', req.query);
-  const q = (req.query.q as string) || '';
-  const page = parseInt(req.query.page as string) || 1;
+  const q           = (req.query.q as string) || '';
+  const page        = parseInt(req.query.page as string) || 1;
+  const marketplace = (req.query.marketplace as string) || 'all';
 
   if (!q) {
     return res.status(400).json({ error: 'Missing query' });
   }
 
   try {
-    const [subitoRes, ebayRes] = await Promise.allSettled([
+    const [subitoRes, ebayRes, lbcRes] = await Promise.allSettled([
       scrapeSubito(q, page),
       scrapeEbay(q),
+      scrapeLeboncoin(q, page),
     ]);
 
     const subitoItems: ListingItem[] =
@@ -41,20 +46,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? ebayRes.value
         : (console.error('❌ scrapeEbay failed:', ebayRes.reason), []);
 
+    const lbcItems: ListingItem[] =
+      lbcRes.status === 'fulfilled'
+        ? lbcRes.value
+        : (console.error('❌ scrapeLeboncoin failed:', lbcRes.reason), []);
+
     // Mescola round-robin
-    const all = interleaveArrays(subitoItems, ebayItems);
+    let allItems = interleaveMany([subitoItems, ebayItems, lbcItems]);
 
-    // Prendi i primi MAX_PER_PAGE
-    const items = all.slice(0, MAX_PER_PAGE);
+    // Filtro marketplace
+    if (marketplace !== 'all') {
+      allItems = allItems.filter(item => item.source === marketplace);
+    }
 
-    // Se uno dei due ha almeno MAX_PER_PAGE risultati, c'è ancora un'altra pagina
-    const hasMore =
-      subitoItems.length >= MAX_PER_PAGE || ebayItems.length >= MAX_PER_PAGE;
+    // Pagina
+    const items   = allItems.slice(0, MAX_PER_PAGE);
+    const hasMore = allItems.length > MAX_PER_PAGE;
 
-    console.log(`📦 Returning ${items.length} items (hasMore=${hasMore})`);
-
-    // caching edge-friendly
+    // Caching edge-friendly
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+    console.log(`📦 Returning ${items.length} items (hasMore=${hasMore})`);
     return res.status(200).json({ items, hasMore });
   } catch (err) {
     console.error('❌ [api/search] unexpected error:', err);
