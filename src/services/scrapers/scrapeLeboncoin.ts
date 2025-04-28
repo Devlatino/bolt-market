@@ -26,10 +26,16 @@ function findAdsArray(obj: any): any[] | null {
 function mapJsonAd(ad: any): ListingItem {
   const title = ad.title || '';
   let price = 0;
-  if (typeof ad.price === 'number') price = ad.price;
-  else if (ad.price?.value) price = Number(ad.price.value) || 0;
-  else if (typeof ad.price === 'string') price = parseFloat(ad.price.replace(/[^
-\\d.,]/g, '').replace(',', '.')) || 0;
+  if (typeof ad.price === 'number') {
+    price = ad.price;
+  } else if (ad.price?.value) {
+    price = Number(ad.price.value) || 0;
+  } else if (typeof ad.price === 'string') {
+    price = parseFloat(
+      ad.price.replace(/[^
+\d\.,]/g, '').replace(',', '.')
+    ) || 0;
+  }
 
   const path = ad.uri || ad.url || '';
   const url  = path.startsWith('http') ? path : `https://www.leboncoin.fr${path}`;
@@ -105,7 +111,10 @@ export async function scrapeLeboncoin(
     const e = $(el);
     const title = e.find('section.item_infos h2.item_title').text().trim();
     const priceText = e.find('section.item_infos h3.item_price').text();
-    const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+    const price = parseFloat(
+      priceText.replace(/[^
+\d\.,]/g, '').replace(',', '.')
+    ) || 0;
     const href = e.attr('href') || '';
     const itemUrl = href.startsWith('http') ? href : `https://www.leboncoin.fr${href}`;
     const imgUrl = e.find('div.item_imagePic span').attr('data-imgsrc') || '';
