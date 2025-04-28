@@ -2,7 +2,6 @@
 import type { ListingItem } from '../../types';
 import { load } from 'cheerio';
 import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer-core';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -19,29 +18,23 @@ export async function scrapeSubito(
 
   console.log(`📡 [scrapeSubito] fetching URL: ${url}`);
 
-  // Avvia sempre Puppeteer per avere il DOM completo
-  const exePath = await chromium.executablePath;
-  const launchOpts = {
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    executablePath: exePath || undefined,
-    headless: chromium.headless,
-  };
-
+  // 1) Lancio sempre chrome-aws-lambda
   let browser;
   try {
-    browser = exePath
-      ? await chromium.puppeteer.launch(launchOpts)
-      : await puppeteer.launch({ args: chromium.args, headless: true });
+    browser = await chromium.puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath,
+      headless: chromium.headless,
+    });
   } catch (err) {
-    console.warn(
-      '❌ [scrapeSubito] Puppeteer launch fallito, riprovo con puppeteer-core:',
-      err
-    );
-    browser = await puppeteer.launch({ args: chromium.args, headless: true });
+    console.error('❌ [scrapeSubito] chromium.launch failed:', err);
+    // Se non riusciamo a lanciare il browser, esci subito
+    return [];
   }
 
   const pageCtx = await browser.newPage();
+  // settaggi base
   await pageCtx.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
     'AppleWebKit/537.36 (KHTML, like Gecko) ' +
@@ -50,15 +43,17 @@ export async function scrapeSubito(
   await pageCtx.setExtraHTTPHeaders({
     'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8'
   });
+  // attendi che le risorse di rete si stabilizzino
   await pageCtx.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
+  // prendi l'HTML renderizzato
   const html = await pageCtx.content();
   await browser.close();
 
+  // 2) Parsalo con Cheerio
   const $ = load(html);
   const items: ListingItem[] = [];
 
-  // Selettore aggiornato: ogni "li" con data-testid listing-card
   $('li[data-testid="listing-card"]').each((_, el) => {
     const $el = $(el);
     const anchor = $el.find('a[href*="/annunci-italia"]');
@@ -67,21 +62,21 @@ export async function scrapeSubito(
 
     const priceText = $el
       .find('[data-testid="ad-price"]')
-      .first()
       .text()
       .replace(/[^\d.,]/g, '')
       .replace(',', '.');
     const price = parseFloat(priceText) || 0;
 
     const link = anchor.attr('href') || '';
-    const itemUrl = link.startsWith('http') ? link : `https://www.subito.it${link}`;
+    const itemUrl = link.startsWith('http')
+      ? link
+      : `https://www.subito.it${link}`;
 
     const imgEl = $el.find('img');
     const imageUrl = imgEl.attr('data-src')?.trim() || imgEl.attr('src')?.trim() || '';
 
     const location = $el
       .find('[data-testid="ad-location"]')
-      .first()
       .text()
       .trim();
 
