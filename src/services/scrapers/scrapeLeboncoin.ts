@@ -4,10 +4,11 @@ import type { ListingItem } from '../../types';
 import axios from 'axios';
 import { load } from 'cheerio';
 import chromium from 'chrome-aws-lambda';
+import puppeteer from 'puppeteer-core';
 
 const ITEMS_PER_PAGE = 30;
 
-/** Aggiunge lo “https:” se manca lo schema */
+// Aggiunge "https:" se manca lo schema
 function addSchemeIfMissing(url: string): string {
   if (!url) return url;
   if (url.startsWith('//')) return 'https:' + url;
@@ -15,7 +16,7 @@ function addSchemeIfMissing(url: string): string {
   return url;
 }
 
-/** Cerca array di annunci in un JSON nested (Next.js __NEXT_DATA__) */
+// Cerca l'array di annunci dentro __NEXT_DATA__
 function findAdsArray(obj: any): any[] | null {
   if (Array.isArray(obj) && obj.length && typeof obj[0] === 'object') {
     const keys = Object.keys(obj[0]);
@@ -30,7 +31,7 @@ function findAdsArray(obj: any): any[] | null {
   return null;
 }
 
-/** Mappa un annuncio JSON in ListingItem */
+// Mappa un singolo annuncio JSON in ListingItem
 function mapJsonAdToItem(ad: any): ListingItem {
   const title       = ad.title || '';
   const description = ad.description || '';
@@ -44,9 +45,11 @@ function mapJsonAdToItem(ad: any): ListingItem {
   const url      = linkPath.startsWith('http')
                    ? linkPath
                    : `https://www.leboncoin.fr${linkPath}`;
+
   const imageUrl = (ad.images && ad.images[0]) ||
                    (ad.pictures && ad.pictures[0]?.url) ||
                    '';
+
   const location = ad.location?.city || ad.city || '';
   let date       = Date.now();
   if (ad.creation_date) date = new Date(ad.creation_date).getTime();
@@ -55,9 +58,18 @@ function mapJsonAdToItem(ad: any): ListingItem {
   return { id: url, title, description, price, imageUrl, url, source: 'leboncoin', location, date };
 }
 
-/**
- * scrapeLeboncoin: JSON-first con axios, poi headless con chromium.puppeteer, poi HTML fallback in stile Scrapy.
- */
+// Helper per lanciare il browser con chrome-aws-lambda
+async function launchBrowser() {
+  const execPath = await chromium.executablePath;
+  return puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: execPath || undefined,
+    headless: chromium.headless,
+  });
+}
+
+// Funzione principale di scraping
 export async function scrapeLeboncoin(
   query: string,
   page: number = 1
@@ -66,7 +78,7 @@ export async function scrapeLeboncoin(
   const searchUrl = `https://www.leboncoin.fr/recherche?text=${encodeURIComponent(query)}&page=${page}`;
   let html: string;
 
-  // 1) Prova JSON-based con axios
+  // 1) JSON-first con axios
   try {
     const resp = await axios.get<string>(searchUrl, {
       headers: {
@@ -78,18 +90,12 @@ export async function scrapeLeboncoin(
       timeout: 60000,
     });
     html = resp.data;
-  } catch (err) {
-    console.warn('⚠️ [scrapeLeboncoin] JSON 403, uso chromium.puppeteer fallback');
-    // 2) Headless browser con chrome-aws-lambda
+  } catch {
+    console.warn('⚠️ [scrapeLeboncoin] JSON 403, fallback headless browser');
+    // 2) Headless browser fallback
     try {
-      const exePath = await chromium.executablePath;
-      const browser = await chromium.puppeteer.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: exePath,
-        headless: chromium.headless,
-      });
-      const pageP = await browser.newPage();
+      const browser = await launchBrowser();
+      const pageP   = await browser.newPage();
       await pageP.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
                                'AppleWebKit/537.36 (KHTML, like Gecko) ' +
                                'Chrome/115.0.0.0 Safari/537.36');
@@ -105,7 +111,7 @@ export async function scrapeLeboncoin(
 
   const $ = load(html);
 
-  // ─── JSON‐BASED SCRAPING ───────────────────────────────────────────────
+  // ── JSON‐BASED SCRAPING ─────────────────────────────────────────────
   const script = $('script#__NEXT_DATA__').html();
   if (script) {
     try {
@@ -124,19 +130,19 @@ export async function scrapeLeboncoin(
     console.warn('⚠️ [scrapeLeboncoin] __NEXT_DATA__ non trovato');
   }
 
-  // ─── HTML FALLBACK (ispirato a andremiras-lbcscraper) ────────────────
+  // ── HTML FALLBACK (“Scrapy‐style”) ──────────────────────────────────
   console.warn('⚠️ [scrapeLeboncoin] uso HTML fallback “list_item” selector');
   const listings: ListingItem[] = [];
 
   $('section.mainList ul li a.list_item').each((_, el) => {
-    const el$       = $(el);
-    const rawLink   = el$.attr('href') || '';
-    const link      = addSchemeIfMissing(rawLink);
-    const title     = el$.find('section.item_infos h2.item_title').text().trim();
-    const priceStr  = el$.find('section.item_infos h3.item_price').text().trim();
-    const price     = parseFloat(priceStr.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
-    const photoRaw  = el$.find('div.item_imagePic span').attr('data-imgsrc') || '';
-    const photo     = addSchemeIfMissing(photoRaw);
+    const el$      = $(el);
+    const rawLink  = el$.attr('href') || '';
+    const link     = addSchemeIfMissing(rawLink);
+    const title    = el$.find('section.item_infos h2.item_title').text().trim();
+    const priceStr = el$.find('section.item_infos h3.item_price').text().trim();
+    const price    = parseFloat(priceStr.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+    const photoRaw = el$.find('div.item_imagePic span').attr('data-imgsrc') || '';
+    const photo    = addSchemeIfMissing(photoRaw);
 
     listings.push({
       id:          link,

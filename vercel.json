@@ -21,5 +21,10 @@
     { "handle": "filesystem" },
     { "src": "/api/(.*)", "dest": "/api/$1.ts" },
     { "src": "/(.*)",      "dest": "/index.html" }
-  ]
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": ["node_modules/chrome-aws-lambda/**/*"]
+    }
+  }
 }
