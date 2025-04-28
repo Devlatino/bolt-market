@@ -4,10 +4,13 @@ import type { ListingItem } from '../../types';
 import axios from 'axios';
 import { load } from 'cheerio';
 import chromium from 'chrome-aws-lambda';
+import puppeteer from 'puppeteer';
 
-/** Cerca ricorsivamente un array di “ad” nel JSON di __NEXT_DATA__ */
+const ITEMS_PER_PAGE = 30;
+
+/** Cerca un array di annunci in un oggetto JSON nested */
 function findAdsArray(obj: any): any[] | null {
-  if (Array.isArray(obj) && obj.length && typeof obj[0] === 'object') {
+  if (Array.isArray(obj) && obj.length > 0 && typeof obj[0] === 'object') {
     const keys = Object.keys(obj[0]);
     if (keys.includes('id') && keys.includes('title')) return obj;
   }
@@ -20,7 +23,7 @@ function findAdsArray(obj: any): any[] | null {
   return null;
 }
 
-/** Mappa un oggetto JSON di Leboncoin in ListingItem */
+/** Mappa il JSON di Leboncoin in ListingItem */
 function mapJsonAdToItem(ad: any): ListingItem {
   const title       = ad.title || '';
   const description = ad.description || '';
@@ -58,7 +61,7 @@ function mapJsonAdToItem(ad: any): ListingItem {
 }
 
 /**
- * scrapeLeboncoin: JSON‐first, poi Puppeteer (chrome-aws-lambda) + HTML fallback
+ * scrapeLeboncoin: JSON-first con axios, poi headless browser, poi HTML fallback.
  */
 export async function scrapeLeboncoin(
   query: string,
@@ -69,7 +72,7 @@ export async function scrapeLeboncoin(
 
   let html: string;
 
-  // 1) Prova JSON‐based con axios
+  // 1) Prova JSON-based tramite axios
   try {
     const resp = await axios.get<string>(searchUrl, {
       headers: {
@@ -82,25 +85,40 @@ export async function scrapeLeboncoin(
     });
     html = resp.data;
   } catch (err) {
-    console.warn('⚠️ [scrapeLeboncoin] axios 403, passo a Puppeteer');
-    // 2) Fallback Puppeteer via chrome-aws-lambda
-    const exePath = await chromium.executablePath;
-    const browser = await chromium.puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: exePath,
-      headless: chromium.headless,
-    });
-    const pageP = await browser.newPage();
-    await pageP.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                             'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-                             'Chrome/115.0.0.0 Safari/537.36');
-    await pageP.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8' });
-    await pageP.goto(searchUrl, { waitUntil: 'networkidle2' });
-    html = await pageP.content();
-    await browser.close();
+    console.warn('⚠️ [scrapeLeboncoin] axios 403, uso headless browser');
+    // 2) Headless browser: puppeteer in locale, chrome-aws-lambda in prod
+    try {
+      let browser;
+      if (process.env.AWS_LAMBDA_FUNCTION_VERSION) {
+        // Produzione su Vercel/AWS Lambda
+        const exePath = await chromium.executablePath;
+        browser = await chromium.puppeteer.launch({
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: exePath,
+          headless: chromium.headless,
+        });
+      } else {
+        // Locale: usa puppeteer con Chromium bundlato
+        browser = await puppeteer.launch({ headless: true });
+      }
+
+      const pageP = await browser.newPage();
+      await pageP.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+                               'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+                               'Chrome/115.0.0.0 Safari/537.36');
+      await pageP.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8' });
+      await pageP.goto(searchUrl, { waitUntil: 'networkidle2' });
+      html = await pageP.content();
+      await browser.close();
+    } catch (puppErr) {
+      console.error('❌ [scrapeLeboncoin] errore headless browser:', puppErr);
+      // 3) Se anche questo fallisce, restituisci array vuoto
+      return [];
+    }
   }
 
+  // Parsiamo con Cheerio
   const $ = load(html);
 
   // ─── JSON‐BASED SCRAPING ───────────────────────────────────────────────
@@ -126,20 +144,20 @@ export async function scrapeLeboncoin(
   console.warn('⚠️ uso HTML fallback');
   const listings: ListingItem[] = [];
 
-  // Ogni annuncio è un <li itemtype="http://schema.org/Offer">
   $('li[itemtype="http://schema.org/Offer"]').each((_, el) => {
-    const el$ = $(el);
-    const id  = el$.find('div.saveAd').attr('data-savead-id') || '';
-    let href  = el$.find('a').first().attr('href') || '';
+    const el$   = $(el);
+    const id    = el$.find('div.saveAd').attr('data-savead-id') || '';
+    let href    = el$.find('a').first().attr('href') || '';
     if (!href.startsWith('http')) href = `https:${href}`;
-    const title       = el$.find('section.item_infos > h2').text().trim();
-    let priceText     = el$.find('div.price').text().trim();
-    if (!priceText)
-      priceText = el$.find('h3.item_price').attr('content') || '';
-    const price       = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
-    const imageUrl    = el$.find('img').attr('src') || '';
-    const address     = el$.find('p[itemtype="http://schema.org/Place"]').text().trim();
-    const date        = Date.now();
+
+    const title   = el$.find('section.item_infos > h2').text().trim();
+    let priceText = el$.find('div.price').text().trim();
+    if (!priceText) priceText = el$.find('h3.item_price').attr('content') || '';
+    const price   = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+
+    const imageUrl = el$.find('img').attr('src') || '';
+    const address  = el$.find('p[itemtype="http://schema.org/Place"]').text().trim();
+    const date     = Date.now();
 
     listings.push({
       id:          id || href,
