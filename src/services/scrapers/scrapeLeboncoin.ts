@@ -4,19 +4,18 @@ import type { ListingItem } from '../../types';
 import axios from 'axios';
 import { load } from 'cheerio';
 import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer';
 
 const ITEMS_PER_PAGE = 30;
 
-/** Aggiunge lo “http:” se manca lo schema */
+/** Aggiunge lo “https:” se manca lo schema */
 function addSchemeIfMissing(url: string): string {
   if (!url) return url;
-  if (url.startsWith('//'))  return 'https:' + url;
+  if (url.startsWith('//')) return 'https:' + url;
   if (!url.match(/^https?:\/\//)) return 'https://' + url;
   return url;
 }
 
-/** Cerca array di annunci in JSON nested (Next.js) */
+/** Cerca array di annunci in un JSON nested (Next.js __NEXT_DATA__) */
 function findAdsArray(obj: any): any[] | null {
   if (Array.isArray(obj) && obj.length && typeof obj[0] === 'object') {
     const keys = Object.keys(obj[0]);
@@ -45,11 +44,9 @@ function mapJsonAdToItem(ad: any): ListingItem {
   const url      = linkPath.startsWith('http')
                    ? linkPath
                    : `https://www.leboncoin.fr${linkPath}`;
-
   const imageUrl = (ad.images && ad.images[0]) ||
                    (ad.pictures && ad.pictures[0]?.url) ||
                    '';
-
   const location = ad.location?.city || ad.city || '';
   let date       = Date.now();
   if (ad.creation_date) date = new Date(ad.creation_date).getTime();
@@ -58,6 +55,9 @@ function mapJsonAdToItem(ad: any): ListingItem {
   return { id: url, title, description, price, imageUrl, url, source: 'leboncoin', location, date };
 }
 
+/**
+ * scrapeLeboncoin: JSON-first con axios, poi headless con chromium.puppeteer, poi HTML fallback in stile Scrapy.
+ */
 export async function scrapeLeboncoin(
   query: string,
   page: number = 1
@@ -78,9 +78,9 @@ export async function scrapeLeboncoin(
       timeout: 60000,
     });
     html = resp.data;
-  } catch {
-    console.warn('⚠️ [scrapeLeboncoin] JSON 403, uso headless browser');
-    // 2) Headless browser fallback
+  } catch (err) {
+    console.warn('⚠️ [scrapeLeboncoin] JSON 403, uso chromium.puppeteer fallback');
+    // 2) Headless browser con chrome-aws-lambda
     try {
       const exePath = await chromium.executablePath;
       const browser = await chromium.puppeteer.launch({
@@ -97,8 +97,8 @@ export async function scrapeLeboncoin(
       await pageP.goto(searchUrl, { waitUntil: 'networkidle2' });
       html = await pageP.content();
       await browser.close();
-    } catch (err) {
-      console.error('❌ [scrapeLeboncoin] browser error:', err);
+    } catch (browserErr) {
+      console.error('❌ [scrapeLeboncoin] errore headless browser:', browserErr);
       return [];
     }
   }
@@ -124,25 +124,19 @@ export async function scrapeLeboncoin(
     console.warn('⚠️ [scrapeLeboncoin] __NEXT_DATA__ non trovato');
   }
 
-  // ─── HTML FALLBACK (ispirato a lbcscraper) ───────────────────────────
+  // ─── HTML FALLBACK (ispirato a andremiras-lbcscraper) ────────────────
   console.warn('⚠️ [scrapeLeboncoin] uso HTML fallback “list_item” selector');
   const listings: ListingItem[] = [];
 
-  // Sezione principale con <section class="mainList">…<a class="list_item">
   $('section.mainList ul li a.list_item').each((_, el) => {
-    const el$   = $(el);
+    const el$       = $(el);
     const rawLink   = el$.attr('href') || '';
     const link      = addSchemeIfMissing(rawLink);
     const title     = el$.find('section.item_infos h2.item_title').text().trim();
     const priceStr  = el$.find('section.item_infos h3.item_price').text().trim();
     const price     = parseFloat(priceStr.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
-    const photoRaw  = el$.find('div.item_image span.item_imagePic span').attr('data-imgsrc') || '';
+    const photoRaw  = el$.find('div.item_imagePic span').attr('data-imgsrc') || '';
     const photo     = addSchemeIfMissing(photoRaw);
-
-    // NON sempre disponibili in lista: city/postcode vengono dal dettaglio,
-    // qui li lasciamo vuoti o duplicati nella description (=> dettaglio non implementato)
-    const location  = '';
-    const date      = Date.now();
 
     listings.push({
       id:          link,
@@ -152,8 +146,8 @@ export async function scrapeLeboncoin(
       imageUrl:    photo,
       url:         link,
       source:      'leboncoin',
-      location,
-      date,
+      location:     '',
+      date:         Date.now(),
     });
   });
 
