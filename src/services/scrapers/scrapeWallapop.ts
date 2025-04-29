@@ -1,3 +1,4 @@
+import axios from 'axios';
 export async function scrapeWallapop(query: string, page = 1): Promise<ListingItem[]> {
   const limit = 20;
   const offset = (page - 1) * limit;

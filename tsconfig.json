@@ -1,7 +1,19 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "strict": true,
+    "esModuleInterop": true,
+    "moduleResolution": "node16",      // ← risolve import da rollup/parseAst
+    "skipLibCheck": true,              // ← ignora i controlli di tipo in node_modules
+    "outDir": "dist",
+    "resolveJsonModule": true
+  },
+  "include": [
+    "scrapeLeboncoin.ts",              // o "src/**/*.ts" se sposti lì i tuoi file
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
   ]
 }
