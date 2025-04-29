@@ -1,56 +1,45 @@
-/* src/services/scrapers/scrapeWallapop.ts */
+// src/services/scrapers/scrapeWallapop.ts
+import axios from 'axios';
 import type { ListingItem } from '../../types';
-import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer';   // ← serve per simulare un browser "vero"
 
+/**
+ * Scrape Wallapop via the public JSON API, avoiding headless Chrome.
+ */
 export async function scrapeWallapop(query: string, page = 1): Promise<ListingItem[]> {
-  const exePath = await chromium.executablePath;
-  const browser = exePath
-    ? await chromium.puppeteer.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: exePath,
-        headless: chromium.headless,
-      })
-    : await puppeteer.launch({ headless: true });
+  const limit = 20;
+  const offset = (page - 1) * limit;
+  const url = 'https://api.wallapop.com/api/v3/general/search';
 
-  const pageCtx = await browser.newPage();
-
-  // 1) Carica la pagina di ricerca per generare cookie e token
-  await pageCtx.goto(
-    `https://www.wallapop.com/search?keywords=${encodeURIComponent(query)}`,
-    { waitUntil: 'networkidle2' }
-  );
-
-  // 2) Intercetta la chiamata XHR all’API interna
-  const resp = await pageCtx.evaluate(async () => {
-    const params = new URLSearchParams({ keywords: (new URLSearchParams(window.location.search)).get('keywords') || '' });
-    const apiUrl = `${window.location.origin}/api/v3/general/search?${params.toString()}&order_by=creation_time&offset=0&limit=20`;
-    const r = await fetch(apiUrl, { credentials: 'include' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
+  const resp = await axios.get(url, {
+    params: {
+      keywords: query,
+      offset,
+      limit,
+      order_by: 'creation_time'
+    },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      'Accept-Language': 'it-IT,it;q=0.9',
+      'Referer': `https://es.wallapop.com/search?keywords=${encodeURIComponent(query)}`
+    },
+    timeout: 20000
   });
 
-  await browser.close();
-
-  const rawAds: any[] = resp.search_objects || [];
-  return rawAds.map((ad) => {
+  const items: any[] = resp.data.search_objects || [];
+  return items.map(ad => {
     const uri = ad.uri || ad.link || '';
-    const url = uri.startsWith('http') ? uri : `https://www.wallapop.com${uri}`;
-    const price = ad.price?.amount
-      ? Number(ad.price.amount)
-      : parseFloat(ad.price) || 0;
+    const fullUrl = uri.startsWith('http') ? uri : `https://www.wallapop.com${uri}`;
 
     return {
-      id: ad.id || url,
+      id: ad.id ?? fullUrl,
       title: ad.title || '',
       description: ad.description || '',
-      price,
+      price: ad.price?.amount ?? parseFloat(ad.price) || 0,
       imageUrl: ad.images?.[0]?.url || '',
-      url,
+      url: fullUrl,
       source: 'wallapop',
       location: ad.location?.city || '',
       date: ad.creationTime ? Date.parse(ad.creationTime) : Date.now()
-    };
+    } as ListingItem;
   });
 }
