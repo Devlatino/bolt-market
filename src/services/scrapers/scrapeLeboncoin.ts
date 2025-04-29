@@ -1,20 +1,25 @@
 // src/services/scrapers/scrapeLeboncoin.ts
 
 import axios from 'axios';
-import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
 import type { ListingItem } from '../../types';
 
 /**
- * Scrape Leboncoin senza headless browser,
- * gestendo i cookie di DataDome tramite tough-cookie.
+ * Scrape Leboncoin senza browser headless,
+ * gestendo i cookie di DataDome tramite tough-cookie
+ * e caricando axios-cookiejar-support con dynamic import.
  */
 export async function scrapeLeboncoin(
   query: string,
   page: number = 1
 ): Promise<ListingItem[]> {
-  // 1) Creo e inietto un CookieJar condiviso in axios
+  // 1) Dynamic import di axios-cookiejar-support (ESM)
+  const { wrapper } = await import('axios-cookiejar-support');
+
+  // 2) Preparo un CookieJar per mantenere la sessione
   const jar = new CookieJar();
+
+  // 3) Inietto il jar in un client axios “browser‐like”
   const client = wrapper(
     axios.create({
       jar,
@@ -33,28 +38,29 @@ export async function scrapeLeboncoin(
     })
   );
 
-  // 2) Prima richiesta “clean” per raccogliere i cookie iniziali
+  // 4) Prima richiesta “clean” per raccogliere i cookie iniziali di DataDome
   await client.get('https://www.leboncoin.fr/');
 
-  // 3) Richiesta vera e propria alla pagina di ricerca
+  // 5) Richiesta vera e propria alla pagina di ricerca
   const url = `https://www.leboncoin.fr/recherche?text=${encodeURIComponent(
     query
   )}&page=${page}`;
   const resp = await client.get<string>(url, { responseType: 'text' });
 
-  // 4) Estraggo il JSON SSR da <script id="__NEXT_DATA__">
+  // 6) Estraggo il JSON SSR dal <script id="__NEXT_DATA__">
   const match = resp.data.match(
     /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/
   );
-  if (!match || match.length < 2) return [];
-
+  if (!match || match.length < 2) {
+    return [];
+  }
   const nextData = JSON.parse(match[1]);
   const rawAds: any[] =
     nextData.props?.pageProps?.initialProps?.searchData?.ads ||
     nextData.props?.pageProps?.ads ||
     [];
 
-  // 5) Mappo i risultati in ListingItem
+  // 7) Mappo i risultati in ListingItem
   return rawAds.map((ad) => {
     const link = ad.ad_link || ad.url || '';
     const fullUrl = link.startsWith('http')
