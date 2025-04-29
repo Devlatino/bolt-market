@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* src/services/scrapers/scrapeLeboncoin.ts */
 import type { ListingItem } from '../../types';
 import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer-core';
+import puppeteer from 'puppeteer';   // ← usa puppeteer pieno in fallback
 
 const ITEMS_PER_PAGE = 30;
 
@@ -15,9 +15,11 @@ export async function scrapeLeboncoin(query: string, page = 1): Promise<ListingI
     headless: chromium.headless,
   };
 
+  // Se siamo in Vercel, uso chromium; altrimenti fallback a puppeteer
   const browser = exePath
     ? await chromium.puppeteer.launch(launchOptions)
-    : await puppeteer.launch({ headless: true });
+    : await puppeteer.launch(launchOptions);
+
   const pageCtx = await browser.newPage();
 
   // Imposta un User-Agent “reale” e lingua
