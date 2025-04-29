@@ -7,7 +7,10 @@
       "config": {
         "memory": 2048,
         "maxDuration": 30,
-        "includeFiles": "node_modules/chrome-aws-lambda/**"
+        "includeFiles": [
+          "node_modules/chrome-aws-lambda/**",
+          "src/services/scrapers/**/*"
+        ]
       }
     },
     {
@@ -24,4 +27,3 @@
     { "src": "/(.*)",      "dest": "/index.html" }
   ]
 }
-
